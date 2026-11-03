@@ -1,0 +1,751 @@
+[
+  {
+    "canonical_name": "FLIPKART",
+    "aliases": [
+      "flipkart",
+      "flipkart.com",
+      "fk",
+      "flipkart internet",
+      "flipkart india"
+    ],
+    "corporate_name": "Flipkart Internet Private Limited",
+    "registered_address": "Buildings Alyssa, Begonia & Clove Embassy Tech Village, Outer Ring Road, Devarabeesanahalli Village, Bengaluru, Karnataka - 560103",
+    "nodal_officer_name": "Grievance Redressal Officer",
+    "nodal_email": "grievance.officer@flipkart.com",
+    "twitter_handle": "@FlipkartSupport",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "AMAZON",
+    "aliases": [
+      "amazon",
+      "amazon.in",
+      "amazon india",
+      "amazon seller services"
+    ],
+    "corporate_name": "Amazon Seller Services Private Limited",
+    "registered_address": "8th Floor, Brigade Gateway, 26/1 Dr. Rajkumar Road, Malleshwaram (W), Bengaluru, Karnataka - 560055",
+    "nodal_officer_name": "Grievance Officer - Amazon India",
+    "nodal_email": "grievance-officer@amazon.in",
+    "twitter_handle": "@AmazonHelp",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "MEESHO",
+    "aliases": [
+      "meesho",
+      "meesho app",
+      "fashnear",
+      "meesho.com"
+    ],
+    "corporate_name": "Meesho Limited",
+    "registered_address": "3rd Floor, Wing-E, Helios Business Park, Outer Ring Road, Bellandur / Kadubeesanahalli Village, Bengaluru, Karnataka - 560103",
+    "nodal_officer_name": "Nodal Grievance Officer",
+    "nodal_email": "grievance@meesho.com",
+    "twitter_handle": "@Meesho_Official",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "MYNTRA",
+    "aliases": [
+      "myntra",
+      "myntra.com",
+      "myntra designs"
+    ],
+    "corporate_name": "Myntra Designs Private Limited",
+    "registered_address": "Buildings Alyssa, Begonia and Clove Embassy Tech Village, Outer Ring Road, Devarabeesanahalli Village, Bengaluru, Karnataka - 560103",
+    "nodal_officer_name": "Grievance Officer - Myntra",
+    "nodal_email": "customergrievance@myntra.com",
+    "twitter_handle": "@myntrasupport",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "NYKAA",
+    "aliases": [
+      "nykaa",
+      "nykaa.com",
+      "nykaa fashion",
+      "nykaa man",
+      "fsn ecommerce"
+    ],
+    "corporate_name": "FSN E-Commerce Ventures Limited",
+    "registered_address": "104, Vasan Udyog Bhavan, Sun Mill Compound, Tulsi Pipe Road, Lower Parel, Mumbai, Maharashtra - 400013",
+    "nodal_officer_name": "Grievance Redressal Officer",
+    "nodal_email": "grievanceofficer@nykaa.com",
+    "twitter_handle": "@NykaaCare",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "AJIO",
+    "aliases": [
+      "ajio",
+      "ajio.com",
+      "ajio luxe",
+      "reliance ajio"
+    ],
+    "corporate_name": "Reliance Retail Limited (AJIO)",
+    "registered_address": "3rd Floor, Court House, Lokmanya Tilak Marg, Dhobi Talao, Mumbai, Maharashtra - 400002",
+    "nodal_officer_name": "Grievance Officer - AJIO",
+    "nodal_email": "grievance.officer@ajio.com",
+    "twitter_handle": "@AJIOCares",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "JIOMART",
+    "aliases": [
+      "jiomart",
+      "jio mart",
+      "jiomart.com"
+    ],
+    "corporate_name": "Reliance Retail Limited (JioMart)",
+    "registered_address": "3rd Floor, Court House, Lokmanya Tilak Marg, Dhobi Talao, Mumbai, Maharashtra - 400002",
+    "nodal_officer_name": "Grievance Officer - JioMart",
+    "nodal_email": "grievanceofficer@jiomart.com",
+    "twitter_handle": "@JioMart_Support",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "TATA_CLIQ",
+    "aliases": [
+      "tata cliq",
+      "tatacliq",
+      "tata cliq luxury",
+      "tata unistore"
+    ],
+    "corporate_name": "Tata UniStore Limited",
+    "registered_address": "Empire Plaza IT Park, B Wing, 4th Floor, LBS Marg, Vikhroli (W), Mumbai, Maharashtra - 400083",
+    "nodal_officer_name": "Grievance Redressal Officer",
+    "nodal_email": "grievance.officer@tatacliq.com",
+    "twitter_handle": "@TataCLiQ",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "CROMA",
+    "aliases": [
+      "croma",
+      "croma retail",
+      "croma.com",
+      "tata croma",
+      "infiniti retail"
+    ],
+    "corporate_name": "Infiniti Retail Limited",
+    "registered_address": "Unit No. 701 & 702, 7th Floor, Kaledonia, Sahar Road, Andheri (East), Mumbai, Maharashtra - 400069",
+    "nodal_officer_name": "Grievance Officer - Croma",
+    "nodal_email": "grievanceofficer@croma.com",
+    "twitter_handle": "@cromaretail",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "RELIANCE_DIGITAL",
+    "aliases": [
+      "reliance digital",
+      "reliancedigital",
+      "reliancedigital.in"
+    ],
+    "corporate_name": "Reliance Retail Limited (Reliance Digital)",
+    "registered_address": "3rd Floor, Court House, Lokmanya Tilak Marg, Dhobi Talao, Mumbai, Maharashtra - 400002",
+    "nodal_officer_name": "Grievance Officer",
+    "nodal_email": "reliancedigital@ril.com",
+    "twitter_handle": "@RelianceDigital",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "FIRSTCRY",
+    "aliases": [
+      "firstcry",
+      "first cry",
+      "firstcry.com",
+      "brainbees"
+    ],
+    "corporate_name": "Brainbees Solutions Limited",
+    "registered_address": "Rajashree Business Park, Survey No. 338, Next to Sohrab Hall, Tadiwala Road, Pune, Maharashtra - 411001",
+    "nodal_officer_name": "Nodal Grievance Officer",
+    "nodal_email": "grievance@firstcry.com",
+    "twitter_handle": "@firstcryindia",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "LENSKART",
+    "aliases": [
+      "lenskart",
+      "lenskart.com",
+      "lens kart"
+    ],
+    "corporate_name": "Lenskart Solutions Limited",
+    "registered_address": "Plot No. 151, Okhla Industrial Estate, Phase III, New Delhi - 110020",
+    "nodal_officer_name": "Grievance Officer",
+    "nodal_email": "nodalofficer@lenskart.in",
+    "twitter_handle": "@Lenskart_com",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "PEPPERFRY",
+    "aliases": [
+      "pepperfry",
+      "pepperfry.com",
+      "trendsutra"
+    ],
+    "corporate_name": "Trendsutra Platform Services Private Limited",
+    "registered_address": "101, Ackruti Corporate Park, 1st Floor, LBS Road, Kanjurmarg (West), Mumbai, Maharashtra - 400079",
+    "nodal_officer_name": "Grievance Redressal Officer",
+    "nodal_email": "grievanceofficer@pepperfry.com",
+    "twitter_handle": "@pepperfry",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "URBAN_COMPANY",
+    "aliases": [
+      "urban company",
+      "urbancompany",
+      "urban clap",
+      "urbanclap",
+      "uc"
+    ],
+    "corporate_name": "Urban Company Limited",
+    "registered_address": "Unit No. 8, Ground Floor, Rectangle 1, D-4 Saket District Centre, New Delhi - 110017",
+    "nodal_officer_name": "Grievance Officer",
+    "nodal_email": "grievanceofficer@urbancompany.com",
+    "twitter_handle": "@urbancompany_UC",
+    "category": "E_COMMERCE"
+  },
+  {
+    "canonical_name": "ZOMATO",
+    "aliases": [
+      "zomato",
+      "zomato.com",
+      "eternal"
+    ],
+    "corporate_name": "Zomato Limited",
+    "registered_address": "Ground Floor, 12A, 94 Meghdoot, Nehru Place, New Delhi - 110019",
+    "nodal_officer_name": "Grievance Redressal Officer",
+    "nodal_email": "grievance@zomato.com",
+    "twitter_handle": "@zomatocare",
+    "category": "QUICK_COMMERCE_FOOD"
+  },
+  {
+    "canonical_name": "SWIGGY",
+    "aliases": [
+      "swiggy",
+      "swiggy food",
+      "swiggy.com",
+      "bundl technologies"
+    ],
+    "corporate_name": "Swiggy Limited",
+    "registered_address": "Survey No. 14 & 158, 3rd-6th Floor, Tower 1, Sumadhura Capitol Towers, Pattanduru Agrahara Village, K.R. Puram Hobli, Bengaluru East Taluk, Bengaluru, Karnataka - 560066",
+    "nodal_officer_name": "Grievance Officer - Swiggy",
+    "nodal_email": "grievances@swiggy.in",
+    "twitter_handle": "@SwiggyCares",
+    "category": "QUICK_COMMERCE_FOOD"
+  },
+  {
+    "canonical_name": "BLINKIT",
+    "aliases": [
+      "blinkit",
+      "blink it",
+      "grofers",
+      "blinkit.com"
+    ],
+    "corporate_name": "Blink Commerce Private Limited",
+    "registered_address": "Ground Floor, Pioneer Square, Sector 62, Golf Course Extension Road, Gurugram, Haryana - 122098",
+    "nodal_officer_name": "Nodal Grievance Officer",
+    "nodal_email": "grievance.officer@blinkit.com",
+    "twitter_handle": "@letsblinkit",
+    "category": "QUICK_COMMERCE_FOOD"
+  },
+  {
+    "canonical_name": "ZEPTO",
+    "aliases": [
+      "zepto",
+      "zeptonow",
+      "zepto app",
+      "kiranakart"
+    ],
+    "corporate_name": "Zepto Limited",
+    "registered_address": "Hiranandani Lighthall, A Wing, 6th Floor, Saki Vihar Road, Andheri East, Mumbai, Maharashtra - 400072",
+    "nodal_officer_name": "Grievance Officer - Zepto",
+    "nodal_email": "grievanceofficer@zeptonow.com",
+    "twitter_handle": "@ZeptoNow",
+    "category": "QUICK_COMMERCE_FOOD"
+  },
+  {
+    "canonical_name": "INSTAMART",
+    "aliases": [
+      "instamart",
+      "swiggy instamart",
+      "insta mart"
+    ],
+    "corporate_name": "Swiggy Limited (Swiggy Instamart)",
+    "registered_address": "Survey No. 14 & 158, 3rd-6th Floor, Tower 1, Sumadhura Capitol Towers, Pattanduru Agrahara Village, K.R. Puram Hobli, Bengaluru East Taluk, Bengaluru, Karnataka - 560066",
+    "nodal_officer_name": "Grievance Officer - Instamart",
+    "nodal_email": "grievances@swiggy.in",
+    "twitter_handle": "@SwiggyCares",
+    "category": "QUICK_COMMERCE_FOOD"
+  },
+  {
+    "canonical_name": "BIGBASKET",
+    "aliases": [
+      "bigbasket",
+      "big basket",
+      "bb now",
+      "bbnow",
+      "bb daily"
+    ],
+    "corporate_name": "Supermarket Grocery Supplies Private Limited",
+    "registered_address": "2nd Floor, Fairway Business Park, Challaghatta, Domlur, Bengaluru, Karnataka - 560071",
+    "nodal_officer_name": "Grievance Redressal Officer",
+    "nodal_email": "grievanceofficer@bigbasket.com",
+    "twitter_handle": "@bigbasket_com",
+    "category": "QUICK_COMMERCE_FOOD"
+  },
+  {
+    "canonical_name": "DOMINOS",
+    "aliases": [
+      "dominos",
+      "domino's",
+      "dominos pizza",
+      "jubilant foodworks"
+    ],
+    "corporate_name": "Jubilant FoodWorks Limited",
+    "registered_address": "Plot No. 1A, Sector 16A, Noida, Uttar Pradesh - 201301",
+    "nodal_officer_name": "Grievance Officer",
+    "nodal_email": "guestcare@jublfood.com",
+    "twitter_handle": "@dominos_india",
+    "category": "QUICK_COMMERCE_FOOD"
+  },
+  {
+    "canonical_name": "COUNTRY_DELIGHT",
+    "aliases": [
+      "country delight",
+      "countrydelight",
+      "bisonagro"
+    ],
+    "corporate_name": "BisonAgro Farms Private Limited",
+    "registered_address": "Plot No. 18, Institutional Area, Sector 32, Gurugram, Haryana - 122001",
+    "nodal_officer_name": "Grievance Officer",
+    "nodal_email": "info@countrydelight.in",
+    "twitter_handle": "@CountryDelight_",
+    "category": "QUICK_COMMERCE_FOOD"
+  },
+  {
+    "canonical_name": "INDIGO",
+    "aliases": [
+      "indigo",
+      "indigo airlines",
+      "6e",
+      "goindigo",
+      "interglobe aviation"
+    ],
+    "corporate_name": "InterGlobe Aviation Limited",
+    "registered_address": "Upper Ground Floor, Thapar House, Gate No. 2, Western Wing, 124 Janpath, New Delhi - 110001",
+    "nodal_officer_name": "Nodal Officer - Customer Relations",
+    "nodal_email": "nodalofficer@goindigo.in",
+    "twitter_handle": "@IndiGo6E",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "AIR_INDIA",
+    "aliases": [
+      "air india",
+      "airindia",
+      "ai",
+      "maharaja"
+    ],
+    "corporate_name": "Air India Limited",
+    "registered_address": "Block 4, Vatika One-on-One, Sector 16, NH-48, Gurugram, Haryana - 122007",
+    "nodal_officer_name": "Nodal Officer - Air India",
+    "nodal_email": "nodalofficer@airindia.com",
+    "twitter_handle": "@airindia",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "AKASA_AIR",
+    "aliases": [
+      "akasa",
+      "akasa air",
+      "qp",
+      "snv aviation"
+    ],
+    "corporate_name": "SNV Aviation Private Limited",
+    "registered_address": "12th Floor, Urmi Estate, 95 Ganpatrao Kadam Marg, Lower Parel (West), Mumbai, Maharashtra - 400013",
+    "nodal_officer_name": "Nodal Officer - Akasa Air",
+    "nodal_email": "nodalofficer@akasaair.com",
+    "twitter_handle": "@AkasaAir",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "SPICEJET",
+    "aliases": [
+      "spicejet",
+      "spice jet",
+      "sg"
+    ],
+    "corporate_name": "SpiceJet Limited",
+    "registered_address": "319, Udyog Vihar, Phase IV, Gurugram, Haryana - 122016",
+    "nodal_officer_name": "Nodal Officer - SpiceJet",
+    "nodal_email": "nodalofficer@spicejet.com",
+    "twitter_handle": "@flyspicejet",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "AIR_INDIA_EXPRESS",
+    "aliases": [
+      "air india express",
+      "aix",
+      "airasia india",
+      "ix"
+    ],
+    "corporate_name": "Air India Express Limited",
+    "registered_address": "Block 4, Vatika One-on-One, Sector 16, NH-48, Gurugram, Haryana - 122007",
+    "nodal_officer_name": "Nodal Officer - AIX",
+    "nodal_email": "nodalofficer@airindiaexpress.com",
+    "twitter_handle": "@AirIndiaX",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "MAKEMYTRIP",
+    "aliases": [
+      "makemytrip",
+      "make my trip",
+      "mmt",
+      "makemytrip.com"
+    ],
+    "corporate_name": "MakeMyTrip (India) Private Limited",
+    "registered_address": "19th Floor, Building No. 5, DLF Cyber City, Gurugram, Haryana - 122002",
+    "nodal_officer_name": "Grievance Officer - MakeMyTrip",
+    "nodal_email": "grievanceofficer@makemytrip.com",
+    "twitter_handle": "@makemytripcare",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "GOIBIBO",
+    "aliases": [
+      "goibibo",
+      "go ibibo",
+      "ibibo",
+      "goibibo.com"
+    ],
+    "corporate_name": "MakeMyTrip (India) Private Limited (Goibibo)",
+    "registered_address": "19th Floor, Building No. 5, DLF Cyber City, Gurugram, Haryana - 122002",
+    "nodal_officer_name": "Grievance Officer - Goibibo",
+    "nodal_email": "grievanceofficer@goibibo.com",
+    "twitter_handle": "@goibibo",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "EASEMYTRIP",
+    "aliases": [
+      "easemytrip",
+      "ease my trip",
+      "emt",
+      "easy trip planners"
+    ],
+    "corporate_name": "Easy Trip Planners Limited",
+    "registered_address": "223, FIE Patparganj Industrial Area, Delhi - 110092",
+    "nodal_officer_name": "Grievance Redressal Officer",
+    "nodal_email": "grievance@easemytrip.com",
+    "twitter_handle": "@EaseMyTrip",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "CLEARTRIP",
+    "aliases": [
+      "cleartrip",
+      "clear trip",
+      "cleartrip.com"
+    ],
+    "corporate_name": "Cleartrip Private Limited",
+    "registered_address": "Embassy Tech Village, Outer Ring Road, Devarabeesanahalli Village, Bengaluru, Karnataka - 560103",
+    "nodal_officer_name": "Grievance Officer - Cleartrip",
+    "nodal_email": "grievance.officer@cleartrip.com",
+    "twitter_handle": "@Cleartrip",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "IRCTC",
+    "aliases": [
+      "irctc",
+      "railway",
+      "indian railways",
+      "irctc rail connect",
+      "irctc.co.in"
+    ],
+    "corporate_name": "Indian Railway Catering and Tourism Corporation Limited",
+    "registered_address": "11th Floor, Statesman House, B-148, Barakhamba Road, New Delhi - 110001",
+    "nodal_officer_name": "Public Grievance Officer - IRCTC",
+    "nodal_email": "care@irctc.co.in",
+    "twitter_handle": "@IRCTCofficial",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "OLA",
+    "aliases": [
+      "ola",
+      "ola cabs",
+      "olacabs",
+      "ola electric",
+      "ani technologies"
+    ],
+    "corporate_name": "ANI Technologies Private Limited",
+    "registered_address": "Regent Insignia, #414, 3rd Floor, 4th Block, 17th Main, 100 Feet Road, Koramangala, Bengaluru, Karnataka - 560034",
+    "nodal_officer_name": "Grievance Officer - Ola",
+    "nodal_email": "grievance@olacabs.com",
+    "twitter_handle": "@ola_supports",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "UBER",
+    "aliases": [
+      "uber",
+      "uber india",
+      "uber cab",
+      "uber auto"
+    ],
+    "corporate_name": "Uber India Systems Private Limited",
+    "registered_address": "Regus Business Platinum Centre Pvt. Ltd., Level 13, Platinum Techno Park, Plot No. 17/18, Sector 30A, Vashi, Navi Mumbai, Maharashtra - 400705",
+    "nodal_officer_name": "Grievance Officer - Uber India",
+    "nodal_email": "grievance-officer-india@uber.com",
+    "twitter_handle": "@Uber_Support",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "REDBUS",
+    "aliases": [
+      "redbus",
+      "red bus",
+      "redbus.in"
+    ],
+    "corporate_name": "Ibibo Group Private Limited (redBus)",
+    "registered_address": "5th Floor, #23, Old Airport Road, Indiranagar, Bengaluru, Karnataka - 560008",
+    "nodal_officer_name": "Grievance Officer - redBus",
+    "nodal_email": "grievances@redbus.in",
+    "twitter_handle": "@redBus_in",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "OYO",
+    "aliases": [
+      "oyo",
+      "oyo rooms",
+      "oyorooms",
+      "oravel stays"
+    ],
+    "corporate_name": "Oravel Stays Limited",
+    "registered_address": "Ground Floor-001, Mauryansh Elanza, Shyamal Cross Road, Near Parekh Hospital, Satellite, Ahmedabad, Gujarat - 380015",
+    "nodal_officer_name": "Grievance Officer - OYO",
+    "nodal_email": "grievanceredressalofficer@oyorooms.com",
+    "twitter_handle": "@oyorooms",
+    "category": "AIRLINES_TRAVEL"
+  },
+  {
+    "canonical_name": "JIO",
+    "aliases": [
+      "jio",
+      "reliance jio",
+      "jio fiber",
+      "jiofiber",
+      "jio airfiber"
+    ],
+    "corporate_name": "Reliance Jio Infocomm Limited",
+    "registered_address": "Office-101, Saffron, Near Centre Point, Panchwati 5 Rasta, Ambawadi, Ahmedabad, Gujarat - 380006",
+    "nodal_officer_name": "Appellate Authority / Nodal Officer - Jio",
+    "nodal_email": "care@jio.com",
+    "twitter_handle": "@JioCare",
+    "category": "TELECOM_DTH"
+  },
+  {
+    "canonical_name": "AIRTEL",
+    "aliases": [
+      "airtel",
+      "bharti airtel",
+      "airtel xstream",
+      "airtel fiber",
+      "airtel dth"
+    ],
+    "corporate_name": "Bharti Airtel Limited",
+    "registered_address": "Airtel Center, Plot No. 16, Udyog Vihar, Phase-IV, Gurugram, Haryana - 122015",
+    "nodal_officer_name": "Nodal Officer - Bharti Airtel",
+    "nodal_email": "121@in.airtel.com",
+    "twitter_handle": "@Airtel_Presence",
+    "category": "TELECOM_DTH"
+  },
+  {
+    "canonical_name": "VI",
+    "aliases": [
+      "vi",
+      "vodafone",
+      "idea",
+      "vodafone idea",
+      "myvi"
+    ],
+    "corporate_name": "Vodafone Idea Limited",
+    "registered_address": "Suman Tower, Plot No. 18, Sector 11, Gandhinagar, Gujarat - 382011",
+    "nodal_officer_name": "Nodal Officer - Vi",
+    "nodal_email": "customercare@vodafoneidea.com",
+    "twitter_handle": "@ViCustomerCare",
+    "category": "TELECOM_DTH"
+  },
+  {
+    "canonical_name": "BSNL",
+    "aliases": [
+      "bsnl",
+      "bharat sanchar nigam",
+      "bsnl broadband",
+      "bsnl ftth"
+    ],
+    "corporate_name": "Bharat Sanchar Nigam Limited",
+    "registered_address": "Bharat Sanchar Bhawan, Harish Chandra Mathur Lane, Janpath, New Delhi - 110001",
+    "nodal_officer_name": "Public Grievance Nodal Officer - BSNL",
+    "nodal_email": "cmdbsnl@bsnl.co.in",
+    "twitter_handle": "@BSNLCorporate",
+    "category": "TELECOM_DTH"
+  },
+  {
+    "canonical_name": "ACT_FIBERNET",
+    "aliases": [
+      "act",
+      "act fibernet",
+      "act broadband",
+      "atria convergence"
+    ],
+    "corporate_name": "Atria Convergence Technologies Limited",
+    "registered_address": "2nd & 3rd Floor, Indian Express Building, No. 1, Queen's Road, Bengaluru, Karnataka - 560001",
+    "nodal_officer_name": "Nodal Officer - ACT Fibernet",
+    "nodal_email": "nodalofficer.blr@actcorp.in",
+    "twitter_handle": "@ACTFibernet",
+    "category": "TELECOM_DTH"
+  },
+  {
+    "canonical_name": "TATA_PLAY",
+    "aliases": [
+      "tata play",
+      "tataplay",
+      "tata sky",
+      "tatasky"
+    ],
+    "corporate_name": "Tata Play Limited",
+    "registered_address": "Unit 301 to 305, 3rd Floor, Windsor, Off C.S.T. Road, Kalina, Santacruz (East), Mumbai, Maharashtra - 400098",
+    "nodal_officer_name": "Nodal Officer - Tata Play",
+    "nodal_email": "nodalofficer@tataplay.com",
+    "twitter_handle": "@TataPlayin",
+    "category": "TELECOM_DTH"
+  },
+  {
+    "canonical_name": "PHONEPE",
+    "aliases": [
+      "phonepe",
+      "phone pe",
+      "phonepe.com"
+    ],
+    "corporate_name": "PhonePe Private Limited",
+    "registered_address": "Office-2, Floor 4,5,6,7, Wing A, Block A, Salarpuria Softzone, Bellandur Village, Varthur Hobli, Outer Ring Road, Bengaluru, Karnataka - 560103",
+    "nodal_officer_name": "Nodal Officer - PhonePe",
+    "nodal_email": "nodal@phonepe.com",
+    "twitter_handle": "@PhonePeSupport",
+    "category": "FINTECH_PAYMENTS"
+  },
+  {
+    "canonical_name": "GOOGLE_PAY",
+    "aliases": [
+      "google pay",
+      "gpay",
+      "g-pay",
+      "tez",
+      "googlepay"
+    ],
+    "corporate_name": "Google India Digital Services Private Limited",
+    "registered_address": "5th Floor, DLF Centre, Block 124, Narindra Place, Sansad Marg, New Delhi - 110001",
+    "nodal_officer_name": "Grievance Officer - Google Pay India",
+    "nodal_email": "support-in@google.com",
+    "twitter_handle": "@GooglePayIndia",
+    "category": "FINTECH_PAYMENTS"
+  },
+  {
+    "canonical_name": "PAYTM",
+    "aliases": [
+      "paytm",
+      "paytm upi",
+      "one97",
+      "one97 communications"
+    ],
+    "corporate_name": "One97 Communications Limited",
+    "registered_address": "First Floor, Devika Tower, Nehru Place, New Delhi - 110019",
+    "nodal_officer_name": "Nodal Officer - Paytm",
+    "nodal_email": "nodalofficer@paytm.com",
+    "twitter_handle": "@Paytmcare",
+    "category": "FINTECH_PAYMENTS"
+  },
+  {
+    "canonical_name": "CRED",
+    "aliases": [
+      "cred",
+      "cred app",
+      "cred upi",
+      "dreamplug"
+    ],
+    "corporate_name": "Dreamplug Technologies Private Limited",
+    "registered_address": "404, Uphar II CHS Ltd, Plot No. 5, BHD Sanjeevani Hospital, 7 Bungalows, Andheri (W), Mumbai, Maharashtra - 400061",
+    "nodal_officer_name": "Grievance Redressal Officer - CRED",
+    "nodal_email": "grievanceofficer@cred.club",
+    "twitter_handle": "@CRED_support",
+    "category": "FINTECH_PAYMENTS"
+  },
+  {
+    "canonical_name": "MOBIKWIK",
+    "aliases": [
+      "mobikwik",
+      "mobi kwik",
+      "mobikwik zip"
+    ],
+    "corporate_name": "One Mobikwik Systems Limited",
+    "registered_address": "Unit No. 102, 1st Floor, Block-B, Pegasus One, Golf Course Road, Sector-53, Gurugram, Haryana - 122003",
+    "nodal_officer_name": "Nodal Officer - MobiKwik",
+    "nodal_email": "grievance@mobikwik.com",
+    "twitter_handle": "@MobiKwikSWAT",
+    "category": "FINTECH_PAYMENTS"
+  },
+  {
+    "canonical_name": "HDFC_BANK",
+    "aliases": [
+      "hdfc",
+      "hdfc bank",
+      "payzapp",
+      "hdfcbank"
+    ],
+    "corporate_name": "HDFC Bank Limited",
+    "registered_address": "HDFC Bank House, Senapati Bapat Marg, Lower Parel (West), Mumbai, Maharashtra - 400013",
+    "nodal_officer_name": "Principal Nodal Officer - HDFC Bank",
+    "nodal_email": "pno@hdfcbank.com",
+    "twitter_handle": "@HDFCBank_Cares",
+    "category": "FINTECH_PAYMENTS"
+  },
+  {
+    "canonical_name": "ICICI_BANK",
+    "aliases": [
+      "icici",
+      "icici bank",
+      "imobile",
+      "icicibank"
+    ],
+    "corporate_name": "ICICI Bank Limited",
+    "registered_address": "ICICI Bank Tower, Near Chakli Circle, Old Padra Road, Vadodara, Gujarat - 390007",
+    "nodal_officer_name": "Principal Nodal Officer - ICICI Bank",
+    "nodal_email": "pno@icicibank.com",
+    "twitter_handle": "@ICICIBank_Care",
+    "category": "FINTECH_PAYMENTS"
+  },
+  {
+    "canonical_name": "SBI",
+    "aliases": [
+      "sbi",
+      "state bank of india",
+      "yono",
+      "yono sbi"
+    ],
+    "corporate_name": "State Bank of India",
+    "registered_address": "State Bank Bhavan, Madame Cama Road, Nariman Point, Mumbai, Maharashtra - 400021",
+    "nodal_officer_name": "Principal Nodal Officer - SBI",
+    "nodal_email": "gm.customer@sbi.co.in",
+    "twitter_handle": "@TheOfficialSBI",
+    "category": "FINTECH_PAYMENTS"
+  }
+]

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables & local data
+.env
+data/consumerdost.db
+data/consumerdost.db-wal
+data/consumerdost.db-shm
+
+# IDEs
+.vscode/
+.idea/
+*.swp
