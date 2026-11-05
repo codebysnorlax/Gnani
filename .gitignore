@@ -8,19 +8,50 @@ env/
 venv/
 .venv/
 ENV/
+*.egg-info/
+dist/
+build/
+*.egg
 
-# Pytest / coverage
+# Testing & Coverage
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Environment variables & local data
+# Sensitive Environment & Secrets
 .env
-data/consumerdost.db
-data/consumerdost.db-wal
-data/consumerdost.db-shm
+.env.*
+!.env.example
+*.key
+*.pem
+*.token
+credentials.json
+token.pickle
 
-# IDEs
+# User-requested ignored files and specs
+.agent/
+.agents/
+openspec/
+openspecs/
+PRD.md
+prd*.md
+prd/
+PRD/
+Gnani.md
+gnani.md
+gnain.md
+
+# Local Database & Generated Artifacts
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/artifacts/
+*.log
+
+# IDE & OS
 .vscode/
 .idea/
 *.swp
+*.swo
+.DS_Store
+Thumbs.db

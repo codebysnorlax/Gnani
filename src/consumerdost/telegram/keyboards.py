@@ -1,0 +1,80 @@
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+
+def get_welcome_keyboard() -> InlineKeyboardMarkup:
+    """Buttons on welcome message offering 1-tap demo prompts."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📦 Demo: Flipkart Broken Phone",
+                    callback_data="demo:flipkart",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="💳 Demo: UPI Failed ₹1,200 Recharge",
+                    callback_data="demo:upi",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✈️ Demo: Cancelled Flight Refund",
+                    callback_data="demo:flight",
+                )
+            ],
+        ]
+    )
+
+
+def get_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Action buttons on case assessment card."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 Generate Full Escalation Bundle",
+                    callback_data="action:generate_bundle",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="✏️ Edit Details",
+                    callback_data="action:edit_details",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Cancel",
+                    callback_data="action:cancel",
+                ),
+            ],
+        ]
+    )
+
+
+def get_dossier_action_keyboard(
+    whatsapp_url: str,
+    twitter_url: str,
+) -> InlineKeyboardMarkup:
+    """Action buttons to open external deep links for NCH and X."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💬 Open NCH WhatsApp (1915)",
+                    url=whatsapp_url,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🐦 Post on X (Twitter)",
+                    url=twitter_url,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 File Another Dispute",
+                    callback_data="action:new_dispute",
+                )
+            ],
+        ]
+    )
