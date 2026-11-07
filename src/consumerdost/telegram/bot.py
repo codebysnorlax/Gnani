@@ -1,8 +1,9 @@
 import io
 import logging
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import Bot, Dispatcher, F, BaseMiddleware
-from aiogram.enums import ParseMode
+from aiogram.enums import ParseMode, ChatAction
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     Message,
@@ -18,10 +19,13 @@ from consumerdost.database.repository import DisputeRepository
 from consumerdost.agent.state import ConsumerDostState
 from consumerdost.agent.graph import get_compiled_graph
 from consumerdost.agent.nodes import node_bundle, node_tts
+from consumerdost.speech.gnani_tts import tts_service, SUPPORTED_INDIC_LANGUAGES
+from consumerdost.agent.voice_prompts import VoicePromptComposer
 from consumerdost.telegram.keyboards import (
     get_welcome_keyboard,
     get_confirmation_keyboard,
     get_dossier_action_keyboard,
+    get_language_keyboard,
 )
 from consumerdost.telegram.formatters import (
     format_welcome_message,
@@ -33,6 +37,41 @@ logger = logging.getLogger(__name__)
 
 # Active session cache per user: user_id -> ConsumerDostState
 user_sessions: dict[str, ConsumerDostState] = {}
+
+
+async def send_voice_with_fallback(
+    bot: Bot,
+    chat_id: int | str,
+    audio_path: str | Path | None,
+    caption: str | None = None,
+) -> bool:
+    """Send voice message to chat if file exists, logging warning on failure."""
+    if audio_path and Path(audio_path).exists():
+        try:
+            voice_file = FSInputFile(str(audio_path))
+            await bot.send_voice(chat_id=chat_id, voice=voice_file, caption=caption)
+            return True
+        except Exception as e:
+            logger.warning(f"Could not send voice note to {chat_id}: {e}")
+    return False
+
+
+async def get_or_create_welcome_voice(lang: str = "hi-IN") -> Path | None:
+    """Get cached welcome audio or synthesize a new one using Timbre v3.0."""
+    cache_dir = settings.data_dir / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"welcome_{lang}.wav"
+    if cache_path.exists():
+        return cache_path
+
+    script = VoicePromptComposer.compose_welcome(lang)
+    return await tts_service.synthesize_speech(
+        text=script,
+        output_path=cache_path,
+        language=lang,
+        persona="empathetic",
+        model="timbre-v3.0",
+    )
 
 
 class DeduplicationMiddleware(BaseMiddleware):
@@ -95,9 +134,31 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             "preferred_language": "hi-IN",
             "status": "DRAFT",
         }
+
+        # Show record_voice chat action
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+
+        # 1. Voice-first greeting
+        welcome_voice = await get_or_create_welcome_voice("hi-IN")
+        await send_voice_with_fallback(
+            bot=bot,
+            chat_id=chat_id,
+            audio_path=welcome_voice,
+            caption="🎙️ <b>ConsumerDost:</b> Voice-First Grievance Advocate (Gnani Timbre v3.0)",
+        )
+
+        # 2. Companion text and interactive keyboard
         await message.answer(
             format_welcome_message(),
             reply_markup=get_welcome_keyboard(),
+        )
+
+    @dp.message(Command("language"))
+    async def cmd_language(message: Message):
+        await message.answer(
+            "🌐 <b>Select Preferred Language / अपनी भाषा चुनें:</b>\n"
+            "ConsumerDost speaks and understands 10 Indian languages via Gnani Speech AI.",
+            reply_markup=get_language_keyboard(),
         )
 
     @dp.message(Command("newdispute"))
@@ -147,6 +208,41 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         )
 
     # 2. Callback Query Handlers
+    @dp.callback_query(F.data == "menu:language")
+    async def handle_menu_language(callback: CallbackQuery):
+        await callback.message.answer(
+            "🌐 <b>Select Preferred Language / अपनी भाषा चुनें:</b>",
+            reply_markup=get_language_keyboard(),
+        )
+        await callback.answer()
+
+    @dp.callback_query(F.data.startswith("lang:"))
+    async def handle_language_select(callback: CallbackQuery):
+        selected_lang = callback.data.split(":")[1]
+        user_id = str(callback.from_user.id)
+        chat_id = str(callback.message.chat.id)
+        state = get_user_state(user_id, chat_id)
+        state["preferred_language"] = selected_lang
+
+        lang_name = SUPPORTED_INDIC_LANGUAGES.get(selected_lang, selected_lang)
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+
+        # Generate localized voice greeting in chosen language
+        voice_path = await get_or_create_welcome_voice(selected_lang)
+        await send_voice_with_fallback(
+            bot=bot,
+            chat_id=chat_id,
+            audio_path=voice_path,
+            caption=f"🎙️ <b>Language updated to {lang_name}</b>",
+        )
+
+        await callback.message.answer(
+            f"✅ <b>Language set to {lang_name}!</b>\n"
+            "You can now speak or type your consumer complaint in your preferred language.",
+            reply_markup=get_welcome_keyboard(),
+        )
+        await callback.answer()
+
     @dp.callback_query(F.data.startswith("demo:"))
     async def handle_demo_callbacks(callback: CallbackQuery):
         demo_type = callback.data.split(":")[1]
@@ -180,9 +276,11 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     @dp.callback_query(F.data == "action:generate_bundle")
     async def handle_generate_bundle(callback: CallbackQuery):
         user_id = str(callback.from_user.id)
-        state = get_user_state(user_id, str(callback.message.chat.id))
+        chat_id = str(callback.message.chat.id)
+        state = get_user_state(user_id, chat_id)
 
         await callback.message.answer("⚙️ <i>Generating your complete Tri-Fold Escalation Dossier...</i>")
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
 
         # 1. Run bundle generator
         bundle_res = await node_bundle(state)
@@ -256,12 +354,12 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
         # 7. Deliver Document 4: Gnani Timbre TTS Voice Note
         tts_audio = state.get("tts_audio_path")
-        if tts_audio and Path(tts_audio).exists():
-            audio_file = FSInputFile(tts_audio, filename=f"Voice_Summary_{case_ref}.wav")
-            await callback.message.answer_voice(
-                voice=audio_file,
-                caption="🎙️ <b>Gnani Voice Guide:</b> 15-second action walkthrough in your preferred language.",
-            )
+        await send_voice_with_fallback(
+            bot=bot,
+            chat_id=chat_id,
+            audio_path=tts_audio,
+            caption="🎙️ <b>Gnani Voice Guide:</b> Action walkthrough in your preferred language.",
+        )
 
         # 8. Interactive Action Buttons
         wa_url = state.get("nch_whatsapp_url", "https://wa.me/918860005372")
@@ -299,8 +397,10 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             return
 
         user_id = str(message.from_user.id)
-        state = get_user_state(user_id, str(message.chat.id))
+        chat_id = str(message.chat.id)
+        state = get_user_state(user_id, chat_id)
 
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await message.answer("🎙️ <i>Listening and transcribing with Gnani Prisma v3.0 STT...</i>")
 
         # Download voice file
@@ -314,7 +414,8 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     @dp.message(F.text)
     async def handle_text_message(message: Message):
         user_id = str(message.from_user.id)
-        state = get_user_state(user_id, str(message.chat.id))
+        chat_id = str(message.chat.id)
+        state = get_user_state(user_id, chat_id)
 
         state["raw_input_text"] = message.text
         state["voice_bytes"] = None
@@ -325,17 +426,38 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
 
 async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostState) -> None:
-    """Run LangGraph pipeline turn and reply with clarification or assessment card."""
+    """Run LangGraph pipeline turn and reply with voice-first clarification or assessment card."""
+    chat_id = str(message.chat.id)
+    await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
     graph = await get_compiled_graph()
     result = await graph.ainvoke(state)
     state.update(result)
 
     status = state.get("status")
     if status == "AWAITING_CLARIFICATION":
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+        clarify_audio = state.get("clarification_audio_path")
+        await send_voice_with_fallback(
+            bot=bot,
+            chat_id=chat_id,
+            audio_path=clarify_audio,
+            caption="🎙️ <b>Voice Clarification:</b> Please listen to the details needed.",
+        )
         prompt = state.get("clarification_prompt", "Please provide missing order or name details.")
         await message.answer(f"ℹ️ {prompt}")
+
     elif status == "AWAITING_CONFIRMATION":
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+        assessment_audio = state.get("assessment_audio_path")
+        await send_voice_with_fallback(
+            bot=bot,
+            chat_id=chat_id,
+            audio_path=assessment_audio,
+            caption="🎙️ <b>Dispute Assessment Walkthrough:</b> Statutory claim summary.",
+        )
         card = format_assessment_card(state)
         await message.answer(card, reply_markup=get_confirmation_keyboard())
+
     elif status == "GENERATED":
         await message.answer("Dossier generated.")

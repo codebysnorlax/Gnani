@@ -37,5 +37,8 @@ class ConsumerDostState(TypedDict, total=False):
     twitter_draft_text: str | None
     twitter_intent_url: str | None
     tts_audio_path: str | None
+    clarification_audio_path: str | None
+    assessment_audio_path: str | None
+    welcome_audio_path: str | None
     status: str
     error_message: str | None

@@ -2,7 +2,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 def get_welcome_keyboard() -> InlineKeyboardMarkup:
-    """Buttons on welcome message offering 1-tap demo prompts."""
+    """Buttons on welcome message offering 1-tap demo prompts and language selection."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -22,6 +22,40 @@ def get_welcome_keyboard() -> InlineKeyboardMarkup:
                     text="✈️ Demo: Cancelled Flight Refund",
                     callback_data="demo:flight",
                 )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🌐 Choose Language / भाषा चुनें",
+                    callback_data="menu:language",
+                )
+            ],
+        ]
+    )
+
+
+def get_language_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard for selecting preferred Indic language across 10 official languages."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🇮🇳 हिन्दी (Hindi)", callback_data="lang:hi-IN"),
+                InlineKeyboardButton(text="🇬🇧 English", callback_data="lang:en-IN"),
+            ],
+            [
+                InlineKeyboardButton(text="ಕನ್ನಡ (Kannada)", callback_data="lang:kn-IN"),
+                InlineKeyboardButton(text="தமிழ் (Tamil)", callback_data="lang:ta-IN"),
+            ],
+            [
+                InlineKeyboardButton(text="తెలుగు (Telugu)", callback_data="lang:te-IN"),
+                InlineKeyboardButton(text="मराठी (Marathi)", callback_data="lang:mr-IN"),
+            ],
+            [
+                InlineKeyboardButton(text="বাংলা (Bengali)", callback_data="lang:bn-IN"),
+                InlineKeyboardButton(text="ગુજરાતી (Gujarati)", callback_data="lang:gu-IN"),
+            ],
+            [
+                InlineKeyboardButton(text="മലയാളം (Malayalam)", callback_data="lang:ml-IN"),
+                InlineKeyboardButton(text="ਪੰਜਾਬੀ (Punjabi)", callback_data="lang:pa-IN"),
             ],
         ]
     )

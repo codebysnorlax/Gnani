@@ -4,8 +4,9 @@ from pathlib import Path
 
 from consumerdost.config import settings
 from consumerdost.agent.state import ConsumerDostState
-from consumerdost.speech.gnani_stt import stt_service
-from consumerdost.speech.gnani_tts import tts_service
+from consumerdost.speech.gnani_stt import stt_service, detect_indic_script_language
+from consumerdost.speech.gnani_tts import tts_service, normalize_language_code
+from consumerdost.agent.voice_prompts import VoicePromptComposer
 from consumerdost.security.pii_scrubber import scrub_sensitive_pii
 from consumerdost.agent.llm_router import llm_router
 from consumerdost.domain.brands import resolve_brand
@@ -22,18 +23,29 @@ async def node_ingest(state: ConsumerDostState) -> dict:
     """Ingest voice or text input and transcribe voice using Gnani Prisma v3.0 STT."""
     voice_bytes = state.get("voice_bytes")
     transcript = state.get("raw_input_text") or ""
+    lang = state.get("preferred_language", "hi-IN")
 
     if voice_bytes:
-        lang = state.get("preferred_language", "hi-IN")
         text, is_fallback = await stt_service.transcribe_audio(
             audio_source=voice_bytes,
             filename="voice.ogg",
-            language_code="hi-IN" if lang.startswith("hi") else "en-IN",
+            language_code=lang,
         )
         if text:
             transcript = text
+            # Auto-detect language if not explicitly locked by user
+            detected_lang = detect_indic_script_language(text)
+            if detected_lang:
+                lang = detected_lang
+    elif transcript:
+        detected_lang = detect_indic_script_language(transcript)
+        if detected_lang:
+            lang = detected_lang
 
-    return {"raw_input_text": transcript}
+    return {
+        "raw_input_text": transcript,
+        "preferred_language": lang,
+    }
 
 
 async def node_scrub(state: ConsumerDostState) -> dict:
@@ -92,10 +104,10 @@ async def node_parse(state: ConsumerDostState) -> dict:
 
 
 async def node_clarify(state: ConsumerDostState) -> dict:
-    """Build single targeted clarification prompt for missing fields."""
+    """Build targeted clarification prompt and synthesize voice note with audio tags."""
     missing = state.get("missing_fields", [])
     if not missing:
-        return {"clarification_prompt": None}
+        return {"clarification_prompt": None, "clarification_audio_path": None}
 
     field_prompts = []
     if "order_id" in missing:
@@ -114,8 +126,25 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         "please type or paste the following details:\n\n"
         + "\n".join(field_prompts)
     )
+
+    # Synthesize empathetic clarification audio note
+    lang = state.get("preferred_language", "hi-IN")
+    spoken_script = VoicePromptComposer.compose_clarification(language=lang, missing_fields=missing)
+    user_id = state.get("telegram_user_id", "user")
+    thread_id = state.get("thread_id", "thread")
+    audio_path = settings.data_dir / "artifacts" / f"Clarification_{user_id}_{thread_id}.wav"
+
+    audio_res = await tts_service.synthesize_speech(
+        text=spoken_script,
+        output_path=audio_path,
+        language=lang,
+        persona="empathetic",
+        model="timbre-v3.0",
+    )
+
     return {
         "clarification_prompt": prompt_text,
+        "clarification_audio_path": str(audio_res) if audio_res else None,
         "status": "AWAITING_CLARIFICATION",
     }
 
@@ -151,6 +180,19 @@ async def node_resolve(state: ConsumerDostState) -> dict:
 
     legal_clauses = statute_entry.cpa_sections + statute_entry.sectoral_rules
 
+    # Synthesize assessment walkthrough audio
+    lang = state.get("preferred_language", "hi-IN")
+    total_rupees = claim.total_demanded_paise / 100.0
+    assessment_script = VoicePromptComposer.compose_assessment(total_rupees, language=lang)
+    audio_path = settings.data_dir / "artifacts" / f"Assessment_{case_ref}.wav"
+    assessment_audio = await tts_service.synthesize_speech(
+        text=assessment_script,
+        output_path=audio_path,
+        language=lang,
+        persona="empathetic",
+        model="timbre-v3.0",
+    )
+
     return {
         "brand_resolved": brand_info,
         "case_reference_id": case_ref,
@@ -160,6 +202,7 @@ async def node_resolve(state: ConsumerDostState) -> dict:
         "statutory_penalty_paise": claim.statutory_penalty_paise,
         "damages_claimed_paise": claim.damages_paise,
         "total_claim_paise": claim.total_demanded_paise,
+        "assessment_audio_path": str(assessment_audio) if assessment_audio else None,
         "status": "AWAITING_CONFIRMATION",
     }
 
@@ -229,7 +272,7 @@ async def node_bundle(state: ConsumerDostState) -> dict:
 
 
 async def node_tts(state: ConsumerDostState) -> dict:
-    """Generate closing audio note using Gnani Timbre TTS."""
+    """Generate closing audio note using Gnani Timbre v3.0."""
     case_ref = state.get("case_reference_id") or "CD-0001"
     audio_path = settings.data_dir / "artifacts" / f"Audio_Summary_{case_ref}.wav"
     lang = state.get("preferred_language", "hi-IN")

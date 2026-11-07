@@ -13,7 +13,7 @@ from consumerdost.agent.state import ConsumerDostState
 
 def test_keyboards():
     w = get_welcome_keyboard()
-    assert len(w.inline_keyboard) == 3
+    assert len(w.inline_keyboard) == 4
 
     c = get_confirmation_keyboard()
     assert len(c.inline_keyboard) == 2

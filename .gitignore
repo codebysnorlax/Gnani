@@ -46,6 +46,7 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/artifacts/
+data/cache/
 *.log
 
 # IDE & OS
