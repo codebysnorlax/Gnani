@@ -697,11 +697,12 @@ async def handle_conversational_inquiry(bot: Bot, message: Message, state: Consu
         lang = state.get("preferred_language") or "hi-IN"
         verb_help = "मदद करूँगी" if gender == "female" else "मदद करूंगा"
         verb_prepare = "तैयार करूँगी" if gender == "female" else "तैयार करूंगा"
+        verb_can = "सकती हूँ" if gender == "female" else "सकता हूँ"
         visible_text = (
             f"<b>नमस्ते! मैं सारथी (SAARTHI) हूँ</b>\n"
             f"<i>आपका उपभोक्ता अधिकार और कानूनी शिकायत सहायक</i>\n\n"
             f"अगर किसी कंपनी (जैसे Flipkart, Amazon, एयरलाइंस या बैंक) ने आपका रिफंड अटकाया है या सेवा में कमी की है, तो मैं आपकी पूरी {verb_help}।\n\n"
-            f"<b>मैं आपके लिए क्या कर सकता हूँ:</b>\n"
+            f"<b>मैं आपके लिए क्या कर {verb_can}:</b>\n"
             f"• <b>कानूनी दावे की गणना:</b> उपभोक्ता संरक्षण कानून के तहत ब्याज और हर्जाने की सटीक गणना।\n"
             f"• <b>लीगल नोटिस (PDF):</b> कंपनी के नोडल अधिकारी के लिए औपचारिक कानूनी मांग पत्र।\n"
             f"• <b>राष्ट्रीय उपभोक्ता हेल्पलाइन (NCH 1915):</b> व्हाट्सएप पर शिकायत दर्ज करने के लिए ड्राफ्ट टेक्स्ट।\n"
@@ -754,17 +755,57 @@ async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostS
 
     had_voice = bool(state.get("voice_bytes"))
 
+    # Live progress reporter in chat
+    status_msg = None
+    try:
+        status_msg = await bot.send_message(chat_id=chat_id, text="Connecting to Neurons Nano...")
+    except Exception as e:
+        logger.debug(f"Could not send live progress status message: {e}")
+
+    last_status_text = "Connecting to Neurons Nano..."
+
+    async def report_progress(text: str) -> None:
+        nonlocal last_status_text, status_msg
+        if not status_msg or text == last_status_text:
+            return
+        last_status_text = text
+        try:
+            if hasattr(status_msg, "edit_text"):
+                await status_msg.edit_text(text)
+            else:
+                await bot.edit_message_text(chat_id=chat_id, message_id=status_msg.message_id, text=text)
+        except Exception as e:
+            logger.debug(f"Could not edit live progress message: {e}")
+
+    async def cleanup_status_msg() -> None:
+        nonlocal status_msg
+        if status_msg:
+            try:
+                if hasattr(status_msg, "delete"):
+                    await status_msg.delete()
+                else:
+                    await bot.delete_message(chat_id=chat_id, message_id=status_msg.message_id)
+            except Exception:
+                pass
+            status_msg = None
+
+    state["progress_callback"] = report_progress
+
     try:
         graph = await get_compiled_graph()
         result = await graph.ainvoke(state)
         state.update(result)
     except Exception as e:
+        await cleanup_status_msg()
         logger.exception(f"Workflow turn execution failed: {e}")
         await message.answer(
             "An error occurred while analyzing your dispute details. "
             "Please try rephrasing or type /newdispute to restart."
         )
         return
+
+    # Clean up live status message before presenting results
+    await cleanup_status_msg()
 
     # Surface "What I Heard" STT confirmation card to confirm Prisma v3.0 transcription
     if had_voice:
@@ -779,6 +820,7 @@ async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostS
         state["voice_bytes"] = None
 
     status = state.get("status")
+    engine = state.get("llm_engine") or "Neurons Nano"
     if status == "AWAITING_CLARIFICATION":
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
         clarify_audio = state.get("clarification_audio_path")
@@ -786,7 +828,7 @@ async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostS
             bot=bot,
             chat_id=chat_id,
             audio_path=clarify_audio,
-            caption="<b>Voice Clarification:</b> Please listen to the details needed.",
+            caption=f"<b>Voice Clarification ({engine}):</b> Please listen to the details needed.",
         )
         prompt = state.get("clarification_prompt", "Please provide missing order or name details.")
         await message.answer(prompt)

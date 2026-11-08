@@ -28,6 +28,22 @@ class ComposedResponse:
     visible_text: str
     spoken_text: str
     target_field: str
+    engine: str = "Neurons Nano"
+
+
+async def _notify_progress(cb: Any, text: str) -> None:
+    if not cb:
+        return
+    try:
+        import inspect
+        if inspect.iscoroutinefunction(cb):
+            await cb(text)
+        elif callable(cb):
+            res = cb(text)
+            if inspect.isawaitable(res):
+                await res
+    except Exception:
+        pass
 
 
 def sanitize_speech_tags(text: str, max_tags: int = 1) -> str:
@@ -186,6 +202,7 @@ class ResponseComposer:
             visible_text=visible,
             spoken_text=spoken_clean,
             target_field=target_field,
+            engine="Standard Engine",
         )
 
     @classmethod
@@ -196,6 +213,7 @@ class ResponseComposer:
         language: str = "en-IN",
         latest_user_text: str | None = None,
         voice_character: str = "Shivani",
+        progress_callback: Any = None,
     ) -> ComposedResponse:
         """Compose dynamic clarification response via OpenRouter -> Gemini -> Template cascade."""
         display_name, reason = cls._get_field_meta(target_field, language)
@@ -238,10 +256,13 @@ class ResponseComposer:
             f"Voice Character: {voice_character} ({gender})\n"
         )
 
-        # Tier 1: OpenRouter Free Models
+        # Tier 1: Neurons Nano (OpenRouter Free Models)
         if settings.openrouter_api_key:
+            await _notify_progress(progress_callback, "Connecting to Neurons Nano...")
             candidate_models = []
-            if settings.llm_model and ":free" in settings.llm_model:
+            if settings.openrouter_model:
+                candidate_models.append(settings.openrouter_model)
+            if settings.llm_model and ":free" in settings.llm_model and settings.llm_model not in candidate_models:
                 candidate_models.append(settings.llm_model)
             for m in [
                 "google/gemma-4-31b-it:free",
@@ -281,18 +302,21 @@ class ResponseComposer:
                             visible = data.get("visible_text")
                             spoken = data.get("spoken_text")
                             if visible and spoken:
+                                await _notify_progress(progress_callback, "Connected to Neurons Nano\nThinking...")
                                 return ComposedResponse(
                                     visible_text=visible,
                                     spoken_text=sanitize_speech_tags(spoken, max_tags=1),
                                     target_field=target_field,
+                                    engine="Neurons Nano",
                                 )
                         else:
                             logger.warning(f"OpenRouter model {model_name} returned status {res.status_code}")
                 except Exception as e:
                     logger.warning(f"OpenRouter attempt failed on {model_name}: {e}")
 
-        # Tier 2: Gemini Fallback
+        # Tier 2: Neurons Mini (Google Gemini API / Groq)
         if settings.gemini_api_key:
+            await _notify_progress(progress_callback, "Could not connect to Neurons Nano. Connecting to Neurons Mini...")
             try:
                 from google import genai
                 from google.genai import types
@@ -301,26 +325,71 @@ class ResponseComposer:
                     api_key=settings.gemini_api_key,
                     http_options=types.HttpOptions(timeout=10000),
                 )
-                gemini_model = settings.llm_model if ":free" not in settings.llm_model else "gemini-2.5-flash"
-                response = await client.aio.models.generate_content(
-                    model=gemini_model,
-                    contents=f"{system_prompt}\n\n{user_prompt}",
+                gemini_models = [
+                    settings.llm_model,
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.1-flash-lite",
+                    "gemini-flash-lite-latest",
+                    "gemini-3.8-flash",
+                ]
+                seen_gemini = set()
+                for gem_model in gemini_models:
+                    if not gem_model or ":free" in gem_model or gem_model in seen_gemini:
+                        continue
+                    seen_gemini.add(gem_model)
+                    try:
+                        response = await client.aio.models.generate_content(
+                            model=gem_model,
+                            contents=f"{system_prompt}\n\n{user_prompt}",
+                        )
+                        text = response.text.strip()
+                        if text.startswith("```"):
+                            text = re.sub(r"^```(?:json)?\n", "", text)
+                            text = re.sub(r"\n```$", "", text)
+                        data = json.loads(text)
+                        visible = data.get("visible_text")
+                        spoken = data.get("spoken_text")
+                        if visible and spoken:
+                            await _notify_progress(progress_callback, "Connected to Neurons Mini\nThinking...")
+                            return ComposedResponse(
+                                visible_text=visible,
+                                spoken_text=sanitize_speech_tags(spoken, max_tags=1),
+                                target_field=target_field,
+                                engine="Neurons Mini",
+                            )
+                    except Exception as ge:
+                        logger.warning(f"Dynamic Gemini clarification composition failed on {gem_model}: {ge}")
+            except Exception as e:
+                logger.warning(f"Dynamic Gemini clarification composition failed: {e}")
+
+        if settings.groq_api_key:
+            try:
+                from groq import AsyncGroq
+                client = AsyncGroq(api_key=settings.groq_api_key)
+                completion = await client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    response_format={"type": "json_object"},
+                    timeout=5.0,
                 )
-                text = response.text.strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```(?:json)?\n", "", text)
-                    text = re.sub(r"\n```$", "", text)
-                data = json.loads(text)
+                content = completion.choices[0].message.content
+                data = json.loads(content)
                 visible = data.get("visible_text")
                 spoken = data.get("spoken_text")
                 if visible and spoken:
+                    await _notify_progress(progress_callback, "Connected to Neurons Mini\nThinking...")
                     return ComposedResponse(
                         visible_text=visible,
                         spoken_text=sanitize_speech_tags(spoken, max_tags=1),
                         target_field=target_field,
+                        engine="Neurons Mini",
                     )
             except Exception as e:
-                logger.warning(f"Dynamic Gemini clarification composition failed: {e}")
+                logger.warning(f"Dynamic Groq clarification composition failed: {e}")
 
-        # Tier 3: Deterministic Fallback Template
+        # Tier 3: Deterministic Fallback Template (Standard Engine)
+        await _notify_progress(progress_callback, "Could not connect to Neurons. Using standard engine...")
         return cls.compose_clarification_template(known_facts, target_field, language)

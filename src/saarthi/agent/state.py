@@ -50,6 +50,8 @@ class SaarthiState(TypedDict, total=False):
     tts_latency_ms: int | None
     clarification_target_field: str | None
     bundle_errors: list[str] | None
+    progress_callback: Any
+    llm_engine: str | None
 
 
 # Backward-compatible alias

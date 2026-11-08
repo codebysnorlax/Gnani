@@ -2,6 +2,8 @@ import logging
 import re
 from datetime import date
 from pathlib import Path
+from typing import Any
+import inspect
 
 from saarthi.config import settings
 from saarthi.agent.state import ConsumerDostState
@@ -19,6 +21,20 @@ from saarthi.documents.nch_formatter import format_nch_dossier
 from saarthi.documents.social_formatter import format_twitter_escalation
 
 logger = logging.getLogger(__name__)
+
+
+async def _notify_progress(cb: Any, text: str) -> None:
+    if not cb:
+        return
+    try:
+        if inspect.iscoroutinefunction(cb):
+            await cb(text)
+        elif callable(cb):
+            res = cb(text)
+            if inspect.isawaitable(res):
+                await res
+    except Exception:
+        pass
 
 
 async def node_ingest(state: ConsumerDostState) -> dict:
@@ -61,11 +77,14 @@ async def node_scrub(state: ConsumerDostState) -> dict:
 
 
 async def node_parse(state: ConsumerDostState) -> dict:
-    """Extract structured dispute entities via 4-tier LLM router."""
+    """Extract structured dispute entities via cascading LLM router."""
     sanitized = state.get("sanitized_transcript") or ""
-    draft, tier = await llm_router.extract_dispute_facts(sanitized)
+    progress_cb = state.get("progress_callback")
+    draft, tier = await llm_router.extract_dispute_facts(sanitized, progress_callback=progress_cb)
 
-    updates = {}
+    updates = {
+        "llm_engine": getattr(llm_router, "last_engine", "Neurons Nano"),
+    }
     if draft.brand_raw and not state.get("brand_raw"):
         updates["brand_raw"] = draft.brand_raw
     if draft.amount_paid_inr and not state.get("amount_paid_inr"):
@@ -168,30 +187,7 @@ async def node_parse(state: ConsumerDostState) -> dict:
     updates["missing_fields"] = missing
     return updates
 
-CLARIFICATION_PRIORITY = ["full_name", "order_id", "amount", "incident_date", "brand"]
-
-FIELD_PROMPTS = {
-    "full_name": (
-        "🎙️ <b>One detail needed:</b>\n"
-        "Please provide your <b>Full Legal Name</b> as Sender/Complainant on the legal notice."
-    ),
-    "order_id": (
-        "🎙️ <b>One detail needed:</b>\n"
-        "Please provide your <b>Order ID, booking PNR, or 12-digit UPI UTR</b>."
-    ),
-    "amount": (
-        "🎙️ <b>One detail needed:</b>\n"
-        "Please provide the <b>exact amount paid in INR</b> (e.g. ₹14,999)."
-    ),
-    "incident_date": (
-        "🎙️ <b>One detail needed:</b>\n"
-        "Please provide the <b>approximate transaction date</b> (e.g. 25 Oct 2026)."
-    ),
-    "brand": (
-        "🎙️ <b>One detail needed:</b>\n"
-        "Please provide the <b>Company or Brand name</b>."
-    ),
-}
+CLARIFICATION_PRIORITY = ["brand", "amount", "order_id", "incident_date", "full_name"]
 
 
 async def node_clarify(state: ConsumerDostState) -> dict:
@@ -215,12 +211,14 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         lang = "en-IN"
 
     voice_char = state.get("preferred_voice_character") or "Shivani"
+    progress_cb = state.get("progress_callback")
     composed = await ResponseComposer.compose_clarification(
         known_facts=dict(state),
         target_field=target_field,
         language=lang,
         latest_user_text=state.get("raw_input_text"),
         voice_character=voice_char,
+        progress_callback=progress_cb,
     )
     prompt_text = composed.visible_text
     spoken_script = composed.spoken_text
@@ -229,6 +227,7 @@ async def node_clarify(state: ConsumerDostState) -> dict:
     thread_id = state.get("thread_id", "thread")
     audio_path = settings.data_dir / "artifacts" / f"Clarification_{user_id}_{thread_id}.wav"
 
+    await _notify_progress(progress_cb, "Cooking voice guidance...")
     audio_res = await tts_service.synthesize_speech(
         text=spoken_script,
         output_path=audio_path,
@@ -245,11 +244,15 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         "missing_fields": missing,
         "preferred_voice_character": voice_char,
         "is_explicit_language": state.get("is_explicit_language"),
+        "llm_engine": composed.engine,
     }
 
 
 async def node_resolve(state: ConsumerDostState) -> dict:
     """Resolve brand against directory, map statutes, and calculate paise claim."""
+    progress_cb = state.get("progress_callback")
+    await _notify_progress(progress_cb, "Searching consumer statutes & calculating legal claim...")
+
     brand_raw = state.get("brand_raw") or "Generic Vendor"
     brand_info = resolve_brand(
         brand_raw,
@@ -278,6 +281,7 @@ async def node_resolve(state: ConsumerDostState) -> dict:
     total_rupees = claim.total_demanded_paise / 100.0
     assessment_script = VoicePromptComposer.compose_assessment(total_rupees, language=lang)
     audio_path = settings.data_dir / "artifacts" / f"Assessment_{case_ref}.wav"
+    await _notify_progress(progress_cb, "Cooking assessment audio...")
     assessment_audio = await tts_service.synthesize_speech(
         text=assessment_script,
         output_path=audio_path,
@@ -305,6 +309,8 @@ async def node_resolve(state: ConsumerDostState) -> dict:
 
 async def node_bundle(state: ConsumerDostState) -> dict:
     """Generate the Tri-Fold Escalation Dossier: PDF Notice, NCH Dossier, X Draft."""
+    progress_cb = state.get("progress_callback")
+    await _notify_progress(progress_cb, "Writing legal notice & escalation dossier...")
     if state.get("missing_fields"):
         raise ValueError(
             f"Cannot generate document bundle: missing required fields {state.get('missing_fields')}"
