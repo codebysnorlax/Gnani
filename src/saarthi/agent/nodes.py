@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import date
 from pathlib import Path
 
@@ -83,6 +84,67 @@ async def node_parse(state: ConsumerDostState) -> dict:
         updates["issue_type"] = draft.issue_type
     if draft.incident_summary:
         updates["dispute_narrative_en"] = draft.incident_summary
+
+    # Contextual short-answer disambiguation for pending clarification field
+    target_field = state.get("clarification_target_field")
+    cleaned_input = sanitized.strip()
+
+    if target_field == "full_name" and not updates.get("complainant_full_name") and not state.get("complainant_full_name"):
+        name_candidate = re.sub(
+            r"^(?:my\s+name\s+is|i\s+am|naam|mera\s+naam\s+(?:hai)?)\s*",
+            "",
+            cleaned_input,
+            flags=re.IGNORECASE,
+        ).strip(". ")
+        if name_candidate and len(name_candidate.split()) <= 5 and not re.search(r"\d", name_candidate):
+            updates["complainant_full_name"] = name_candidate.title()
+
+    elif target_field == "amount" and not state.get("amount_paid_inr"):
+        # If user directly provided a number or currency (e.g. "30000", "₹30,000", "30000 rs")
+        amt_match = re.search(
+            r"^(?:₹|rs\.?|inr)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+)\s*(?:₹|rs\.?|inr|rupees)?$",
+            cleaned_input,
+            re.IGNORECASE,
+        )
+        if amt_match:
+            try:
+                val = float(amt_match.group(1).replace(",", ""))
+                if val > 0:
+                    updates["amount_paid_inr"] = val
+            except ValueError:
+                pass
+        elif not updates.get("amount_paid_inr"):
+            amt_match2 = re.search(
+                r"(?:₹|rs\.?|inr)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+)\s*(?:₹|rs\.?|inr|rupees)?",
+                cleaned_input,
+                re.IGNORECASE,
+            )
+            if amt_match2:
+                try:
+                    val = float(amt_match2.group(1).replace(",", ""))
+                    if val > 0:
+                        updates["amount_paid_inr"] = val
+                except ValueError:
+                    pass
+
+    elif target_field == "order_id" and not updates.get("order_id") and not state.get("order_id"):
+        order_candidate = re.sub(
+            r"^(?:order\s*(?:id|no|number)?|id|ref|pnr|utr)\s*[:#-]?\s*",
+            "",
+            cleaned_input,
+            flags=re.IGNORECASE,
+        ).strip(". ")
+        if order_candidate and len(order_candidate.split()) == 1 and len(order_candidate) >= 4:
+            updates["order_id"] = order_candidate.upper()
+
+    elif target_field == "incident_date" and not updates.get("incident_date") and not state.get("incident_date"):
+        date_match = re.search(
+            r"(\d{1,2}[-/ ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[0-9]{1,2})[-/ ]\d{2,4}|\d{4}-\d{2}-\d{2})",
+            cleaned_input,
+            re.IGNORECASE,
+        )
+        if date_match:
+            updates["incident_date"] = date_match.group(1)
 
     # Merge existing state with new updates to check missing fields
     current_brand = updates.get("brand_raw") or state.get("brand_raw")
@@ -180,6 +242,9 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         "clarification_audio_path": str(audio_res) if audio_res else None,
         "status": "AWAITING_CLARIFICATION",
         "clarification_target_field": target_field,
+        "missing_fields": missing,
+        "preferred_voice_character": voice_char,
+        "is_explicit_language": state.get("is_explicit_language"),
     }
 
 

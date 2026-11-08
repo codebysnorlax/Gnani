@@ -69,32 +69,45 @@ class LLMRouter:
             except Exception as e:
                 logger.warning(f"Tier 1 Groq LLM call failed: {e}")
 
-        # Tier 2: Secondary Router (OpenRouter)
+        # Tier 2: Secondary Router (OpenRouter Free Models)
         if self.openrouter_key:
-            try:
-                import httpx
-                async with httpx.AsyncClient(timeout=5.0) as http_client:
-                    res = await http_client.post(
-                        "https://openrouter.ai/api/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {self.openrouter_key}"},
-                        json={
-                            "model": "meta-llama/llama-3.3-70b-instruct:free",
-                            "messages": [
-                                {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
-                                {"role": "user", "content": user_text},
-                            ],
-                        },
-                    )
-                    if res.status_code == 200:
-                        content = res.json()["choices"][0]["message"]["content"]
-                        if content.startswith("```"):
-                            content = content.strip("`").replace("json\n", "")
-                        data = json.loads(content)
-                        draft = DisputeCaseDraft(**data)
-                        draft.check_missing_fields()
-                        return draft, 2
-            except Exception as e:
-                logger.warning(f"Tier 2 OpenRouter call failed: {e}")
+            import httpx
+            models_to_try = [
+                "google/gemma-4-31b-it:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "liquid/lfm-2.5-2.6b:free",
+            ]
+            headers = {
+                "Authorization": f"Bearer {self.openrouter_key}",
+                "HTTP-Referer": "https://github.com/codebysnorlax/Saarthi",
+                "X-Title": "SAARTHI Consumer Grievance Assistant",
+            }
+            for model_name in models_to_try:
+                try:
+                    async with httpx.AsyncClient(timeout=6.0) as http_client:
+                        res = await http_client.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers=headers,
+                            json={
+                                "model": model_name,
+                                "messages": [
+                                    {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
+                                    {"role": "user", "content": user_text},
+                                ],
+                                "temperature": 0.1,
+                            },
+                        )
+                        if res.status_code == 200:
+                            content = res.json()["choices"][0]["message"]["content"].strip()
+                            if content.startswith("```"):
+                                content = re.sub(r"^```(?:json)?\n", "", content)
+                                content = re.sub(r"\n```$", "", content)
+                            data = json.loads(content)
+                            draft = DisputeCaseDraft(**data)
+                            draft.check_missing_fields()
+                            return draft, 2
+                except Exception as e:
+                    logger.warning(f"Tier 2 OpenRouter call failed for {model_name}: {e}")
 
         # Tier 3: Pure-Python Regex Catch-All
         logger.info("Tier 3: Using deterministic pure-python regex fallback")

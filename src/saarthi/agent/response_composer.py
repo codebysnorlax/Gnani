@@ -30,7 +30,7 @@ class ComposedResponse:
     target_field: str
 
 
-def sanitize_speech_tags(text: str, max_tags: int = 2) -> str:
+def sanitize_speech_tags(text: str, max_tags: int = 1) -> str:
     """Enforce tag allowlist (<pauses>, <slow>), no leading tags, and max tag cap."""
     if not text:
         return ""
@@ -197,69 +197,130 @@ class ResponseComposer:
         latest_user_text: str | None = None,
         voice_character: str = "Shivani",
     ) -> ComposedResponse:
-        """Compose dynamic clarification response via LLM with deterministic fallback."""
+        """Compose dynamic clarification response via OpenRouter -> Gemini -> Template cascade."""
         display_name, reason = cls._get_field_meta(target_field, language)
         gender = "female" if voice_character.lower() in {"shivani", "chetana", "kalpana", "lakshmi", "riyaa", "tarika", "vasudha"} else "male"
 
-        # Attempt dynamic LLM composition if Gemini key is present
+        facts_summary = {
+            k: v
+            for k, v in known_facts.items()
+            if v is not None and k in {
+                "brand", "brand_raw", "amount", "amount_paid_inr",
+                "order_id", "incident_date", "complainant_full_name",
+                "full_name", "dispute_category", "issue_type"
+            }
+        }
+
+        system_prompt = (
+            "You are SAARTHI, an empathetic, respectful, and highly competent Indian consumer dispute assistant. "
+            "You assist consumers in resolving disputes with companies under the Consumer Protection Act, 2019.\n\n"
+            "YOUR OBJECTIVE:\n"
+            "Compose a natural, reassuring response that acknowledges what the user just said, "
+            "summarizes key facts gently, and asks for EXACTLY ONE missing detail.\n\n"
+            "STRICT GUIDELINES:\n"
+            "1. NO EMOJIS: Do not include emojis anywhere in visible_text or spoken_text.\n"
+            "2. ACKNOWLEDGE & VALIDATE: Warmly acknowledge the user's latest statement and confirmed facts (e.g., brand, amount, or order ID) naturally.\n"
+            f"3. ASK ONLY ONE FIELD: Ask exclusively for the target missing detail, explicitly mentioning '{display_name}'. Explain briefly and naturally why it is needed.\n"
+            f"4. VOICE GENDER CONCORDANCE: You are speaking as '{voice_character}' ({gender.upper()}). "
+            f"When using Hindi or Hinglish, strictly conjugate first-person verbs for {gender.upper()} gender "
+            f"(e.g., female uses 'karungi', 'bataungi', 'sun rahi hoon'; male uses 'karunga', 'bataunga', 'sun raha hoon').\n"
+            "5. SPOKEN TEXT FOR TTS: Keep 'spoken_text' concise (under 25 words), conversational, and easy to pronounce. "
+            "Do NOT start with emotional tags (e.g. <sigh>, <excited>). You may include at most one <pauses> tag.\n"
+            "6. OUTPUT FORMAT: Respond ONLY with a valid JSON object with keys 'visible_text' (HTML formatted for Telegram) and 'spoken_text'."
+        )
+
+        user_prompt = (
+            f"Known Facts: {json.dumps(facts_summary, ensure_ascii=False)}\n"
+            f"Latest User Statement: \"{latest_user_text or ''}\"\n"
+            f"Target Missing Field: {target_field} ({display_name})\n"
+            f"Why Needed: {reason}\n"
+            f"Language: {language}\n"
+            f"Voice Character: {voice_character} ({gender})\n"
+        )
+
+        # Tier 1: OpenRouter Free Models
+        if settings.openrouter_api_key:
+            candidate_models = []
+            if settings.llm_model and ":free" in settings.llm_model:
+                candidate_models.append(settings.llm_model)
+            for m in [
+                "google/gemma-4-31b-it:free",
+                "nvidia/nemotron-3.5-lightning:free",
+                "liquid/lfm-2.5-2.6b:free",
+            ]:
+                if m not in candidate_models:
+                    candidate_models.append(m)
+
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "HTTP-Referer": "https://github.com/codebysnorlax/Saarthi",
+                "X-Title": "SAARTHI Consumer Grievance Assistant",
+            }
+            for model_name in candidate_models:
+                try:
+                    async with httpx.AsyncClient(timeout=7.0) as http_client:
+                        res = await http_client.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            headers=headers,
+                            json={
+                                "model": model_name,
+                                "messages": [
+                                    {"role": "system", "content": system_prompt},
+                                    {"role": "user", "content": user_prompt},
+                                ],
+                                "temperature": 0.4,
+                            },
+                        )
+                        if res.status_code == 200:
+                            content = res.json()["choices"][0]["message"]["content"].strip()
+                            if content.startswith("```"):
+                                content = re.sub(r"^```(?:json)?\n", "", content)
+                                content = re.sub(r"\n```$", "", content)
+                            data = json.loads(content)
+                            visible = data.get("visible_text")
+                            spoken = data.get("spoken_text")
+                            if visible and spoken:
+                                return ComposedResponse(
+                                    visible_text=visible,
+                                    spoken_text=sanitize_speech_tags(spoken, max_tags=1),
+                                    target_field=target_field,
+                                )
+                        else:
+                            logger.warning(f"OpenRouter model {model_name} returned status {res.status_code}")
+                except Exception as e:
+                    logger.warning(f"OpenRouter attempt failed on {model_name}: {e}")
+
+        # Tier 2: Gemini Fallback
         if settings.gemini_api_key:
             try:
                 from google import genai
                 from google.genai import types
 
-                facts_summary = {
-                    k: v
-                    for k, v in known_facts.items()
-                    if v is not None and k in {"brand", "brand_raw", "amount", "amount_paid_inr", "order_id", "incident_date", "complainant_full_name", "full_name"}
-                }
-
-                system_prompt = (
-                    "You are SAARTHI (pronounced saar-thee), an honest, context-aware Indian consumer dispute assistant. "
-                    "Your mission is to generate a dynamic, respectful, single-field clarification response grounded strictly in what the user stated. "
-                    "STRICT RULES:\n"
-                    "1. Do NOT use any emoji anywhere.\n"
-                    "2. Acknowledge the user's specific context naturally without repetitive boilerplate.\n"
-                    "3. Ground your statement in known facts only. Never invent order numbers, brand misconduct, or guaranteed outcomes.\n"
-                    "4. Ask for EXACTLY ONE missing detail: the target field.\n"
-                    "5. In 'spoken_text', start with plain natural speech without leading emotional tags (<sigh>, <excited>, <whispers>). "
-                    "You may use at most one <pauses> tag if needed.\n"
-                    f"6. Voice Character: {voice_character} (Gender: {gender.upper()}). When composing Hindi or Indic speech with gendered verbs, "
-                    f"strictly conjugate first-person verbs for {gender.upper()} gender (e.g. female uses 'karungi', 'bataungi', 'rahi hoon'; male uses 'karunga', 'bataunga', 'raha hoon').\n"
-                    "7. Return ONLY valid JSON with keys 'visible_text' (Telegram HTML format) and 'spoken_text'."
-                )
-
-                user_prompt = (
-                    f"Known Facts: {json.dumps(facts_summary)}\n"
-                    f"Latest User Statement: \"{latest_user_text or ''}\"\n"
-                    f"Target Missing Field: {target_field} ({display_name})\n"
-                    f"Why Needed: {reason}\n"
-                    f"Language: {language}\n"
-                )
-
                 client = genai.Client(
                     api_key=settings.gemini_api_key,
                     http_options=types.HttpOptions(timeout=10000),
                 )
+                gemini_model = settings.llm_model if ":free" not in settings.llm_model else "gemini-2.5-flash"
                 response = await client.aio.models.generate_content(
-                    model=settings.llm_model,
+                    model=gemini_model,
                     contents=f"{system_prompt}\n\n{user_prompt}",
                 )
                 text = response.text.strip()
                 if text.startswith("```"):
-                    text = text.strip("`").replace("json\n", "")
+                    text = re.sub(r"^```(?:json)?\n", "", text)
+                    text = re.sub(r"\n```$", "", text)
                 data = json.loads(text)
-                visible = data.get("visible_text", "")
-                spoken = data.get("spoken_text", "")
-
+                visible = data.get("visible_text")
+                spoken = data.get("spoken_text")
                 if visible and spoken:
-                    spoken_clean = sanitize_speech_tags(spoken)
                     return ComposedResponse(
                         visible_text=visible,
-                        spoken_text=spoken_clean,
+                        spoken_text=sanitize_speech_tags(spoken, max_tags=1),
                         target_field=target_field,
                     )
             except Exception as e:
-                logger.warning(f"Dynamic LLM clarification composition failed, using fallback: {e}")
+                logger.warning(f"Dynamic Gemini clarification composition failed: {e}")
 
-        # Fallback to deterministic template
+        # Tier 3: Deterministic Fallback Template
         return cls.compose_clarification_template(known_facts, target_field, language)
