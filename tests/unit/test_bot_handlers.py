@@ -148,3 +148,40 @@ async def test_dynamic_multi_turn_clarification_no_repeats():
     assert "order id or reference number" not in res3.visible_text.lower()
 
 
+@pytest.mark.asyncio
+async def test_setup_bot_commands_registers_menu_items():
+    from saarthi.telegram.bot import setup_bot_commands
+
+    mock_bot = MagicMock()
+    mock_bot.set_my_commands = AsyncMock()
+
+    await setup_bot_commands(mock_bot)
+
+    mock_bot.set_my_commands.assert_awaited_once()
+    commands = mock_bot.set_my_commands.call_args[0][0]
+    cmd_names = [c.command for c in commands]
+
+    assert "start" in cmd_names
+    assert "lang" in cmd_names
+    assert "gender" in cmd_names
+    assert "newdispute" in cmd_names
+    assert "mycases" in cmd_names
+    assert "privacy" in cmd_names
+
+
+def test_voice_character_keyboard_gender_indicators():
+    from saarthi.telegram.keyboards import get_voice_character_keyboard
+
+    kb = get_voice_character_keyboard()
+    button_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+
+    assert any("Female: Shivani" in t for t in button_texts)
+    assert any("Male: Devansh" in t for t in button_texts)
+    assert any("Female: Chetana" in t for t in button_texts)
+    assert "voice:Shivani" in callbacks
+    assert "voice:Devansh" in callbacks
+    assert "voice:Chetana" in callbacks
+
+
+

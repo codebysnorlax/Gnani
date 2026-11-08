@@ -72,3 +72,26 @@ async def test_node_ingest_auto_detects_kannada():
     result = await node_ingest(state)
     assert result["preferred_language"] == "hi-IN"
     assert result["detected_script_language"] == "kn-IN"
+
+
+@pytest.mark.asyncio
+async def test_node_clarify_respects_voice_character():
+    from unittest.mock import patch
+    from saarthi.speech.gnani_tts import tts_service
+
+    state: ConsumerDostState = {
+        "telegram_user_id": "test_user_789",
+        "chat_id": "12345",
+        "thread_id": "thread_voice",
+        "preferred_language": "hi-IN",
+        "preferred_voice_character": "Chetana",
+        "missing_fields": ["order_id"],
+    }
+
+    with patch.object(tts_service, "synthesize_speech", wraps=tts_service.synthesize_speech) as mock_synth:
+        result = await node_clarify(state)
+        assert result["status"] == "AWAITING_CLARIFICATION"
+        assert mock_synth.called
+        kwargs = mock_synth.call_args[1]
+        assert kwargs.get("voice") == "Chetana"
+

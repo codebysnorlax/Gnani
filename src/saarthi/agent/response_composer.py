@@ -187,9 +187,11 @@ class ResponseComposer:
         target_field: str,
         language: str = "en-IN",
         latest_user_text: str | None = None,
+        voice_character: str = "Shivani",
     ) -> ComposedResponse:
         """Compose dynamic clarification response via LLM with deterministic fallback."""
         display_name, reason = cls._get_field_meta(target_field, language)
+        gender = "female" if voice_character.lower() in {"shivani", "chetana", "kalpana", "lakshmi", "riyaa", "tarika", "vasudha"} else "male"
 
         # Attempt dynamic LLM composition if Gemini key is present
         if settings.gemini_api_key:
@@ -213,7 +215,9 @@ class ResponseComposer:
                     "4. Ask for EXACTLY ONE missing detail: the target field.\n"
                     "5. In 'spoken_text', start with plain natural speech without leading emotional tags (<sigh>, <excited>, <whispers>). "
                     "You may use at most one <pauses> tag if needed.\n"
-                    "6. Return ONLY valid JSON with keys 'visible_text' (Telegram HTML format) and 'spoken_text'."
+                    f"6. Voice Character: {voice_character} (Gender: {gender.upper()}). When composing Hindi or Indic speech with gendered verbs, "
+                    f"strictly conjugate first-person verbs for {gender.upper()} gender (e.g. female uses 'karungi', 'bataungi', 'rahi hoon'; male uses 'karunga', 'bataunga', 'raha hoon').\n"
+                    "7. Return ONLY valid JSON with keys 'visible_text' (Telegram HTML format) and 'spoken_text'."
                 )
 
                 user_prompt = (

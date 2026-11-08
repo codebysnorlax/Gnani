@@ -25,13 +25,20 @@ def test_welcome_keyboard_has_language_button():
 
 @pytest.mark.asyncio
 async def test_get_or_create_welcome_voice_caching():
-    voice_path = await get_or_create_welcome_voice("kn-IN")
+    voice_path = await get_or_create_welcome_voice("kn-IN", voice="Shivani")
     assert voice_path is not None
     assert voice_path.exists()
+    assert "Shivani" in voice_path.name
 
     # Second call should retrieve from cache
-    cached_path = await get_or_create_welcome_voice("kn-IN")
+    cached_path = await get_or_create_welcome_voice("kn-IN", voice="Shivani")
     assert cached_path == voice_path
+
+    # Different voice character must be cached separately
+    devansh_path = await get_or_create_welcome_voice("kn-IN", voice="Devansh")
+    assert devansh_path is not None
+    assert "Devansh" in devansh_path.name
+    assert devansh_path != voice_path
 
 
 def test_user_session_language_update():

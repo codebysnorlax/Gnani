@@ -16,11 +16,35 @@ from saarthi.speech.tags import sanitize_tags_for_tts
 
 logger = logging.getLogger(__name__)
 
+VOICE_GENDERS: dict[str, str] = {
+    "Shivani": "female",
+    "Chetana": "female",
+    "Lakshmi": "female",
+    "Kalpana": "female",
+    "Vasudha": "female",
+    "Riyaa": "female",
+    "Tarika": "female",
+    "Devansh": "male",
+    "Avinash": "male",
+    "Prakash": "male",
+    "Shubham": "male",
+    "Yashraj": "male",
+    "Harshad": "male",
+}
+
+
+def get_voice_gender(voice_name: str | None) -> str:
+    """Return 'female' or 'male' based on Timbre v3.0 character name."""
+    if not voice_name:
+        return "female"
+    return VOICE_GENDERS.get(voice_name, "female")
+
+
 # 1. Onboarding / Welcome Spoken Prompts
 WELCOME_VOICE_TEMPLATES: dict[str, str] = {
     "hi-IN": (
         "Namaste! Main hoon SAARTHI. <pauses> "
-        "Aapka consumer dispute sunkar turant legal notice aur helpline filing taiyaar karunga. "
+        "Aapka consumer dispute sunkar turant legal notice aur helpline filing taiyaar karungi. "
         "<slow> Kripya ek voice note bhej kar batayein kya hua tha."
     ),
     "en-IN": (
@@ -227,9 +251,25 @@ class VoicePromptComposer:
     """Composes natural, tag-infused spoken prompts for Timbre v3.0."""
 
     @staticmethod
-    def compose_welcome(language: str = "hi-IN") -> str:
+    def compose_welcome(language: str = "hi-IN", voice: str = "Shivani") -> str:
         code = normalize_language_code(language)
-        raw = WELCOME_VOICE_TEMPLATES.get(code, WELCOME_VOICE_TEMPLATES["hi-IN"])
+        gender = get_voice_gender(voice)
+        if code == "hi-IN":
+            verb = "karungi" if gender == "female" else "karunga"
+            raw = (
+                "Namaste! Main hoon SAARTHI. <pauses> "
+                f"Aapka consumer dispute sunkar turant legal notice aur helpline filing taiyaar {verb}. "
+                "<slow> Kripya ek voice note bhej kar batayein kya hua tha."
+            )
+        elif code == "pa-IN":
+            verb = "ਤਿਆਰ ਕਰਾਂਗੀ" if gender == "female" else "ਤਿਆਰ ਕਰਾਂਗਾ"
+            raw = (
+                "ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਹਾਂ ਸਾਰਥੀ (SAARTHI)। <pauses> "
+                f"ਤੁਹਾਡੀ ਸ਼ਿਕਾਇਤ ਸੁਣ ਕੇ ਕਾਨੂੰਨੀ ਨੋਟਿਸ {verb}। "
+                "<slow> ਕਿਰਪਾ ਕਰਕੇ ਆਪਣੀ ਵੌਇਸ ਨੋਟ ਭੇਜੋ।"
+            )
+        else:
+            raw = WELCOME_VOICE_TEMPLATES.get(code, WELCOME_VOICE_TEMPLATES["hi-IN"])
         return sanitize_tags_for_tts(raw)
 
     @staticmethod

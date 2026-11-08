@@ -72,3 +72,25 @@ def test_single_field_clarification_tags():
     assert "naam" in hi_name.lower() or "नाम" in hi_name
     en_order = VoicePromptComposer.compose_single_field_clarification("order_id", "en-IN")
     assert "order id" in en_order.lower()
+
+
+def test_welcome_prompt_gender_pronouns_and_verbs():
+    # Female voices must use feminine verb endings (karungi)
+    hi_female_shivani = VoicePromptComposer.compose_welcome("hi-IN", voice="Shivani")
+    assert "taiyaar karungi" in hi_female_shivani
+    assert "karunga" not in hi_female_shivani
+
+    hi_female_chetana = VoicePromptComposer.compose_welcome("hi-IN", voice="Chetana")
+    assert "taiyaar karungi" in hi_female_chetana
+    assert "karunga" not in hi_female_chetana
+
+    # Male voice must use masculine verb endings (karunga)
+    hi_male_devansh = VoicePromptComposer.compose_welcome("hi-IN", voice="Devansh")
+    assert "taiyaar karunga" in hi_male_devansh
+    assert "karungi" not in hi_male_devansh
+
+    # Punjabi gender agreement
+    pa_female = VoicePromptComposer.compose_welcome("pa-IN", voice="Shivani")
+    assert "ਕਰਾਂਗੀ" in pa_female
+    pa_male = VoicePromptComposer.compose_welcome("pa-IN", voice="Devansh")
+    assert "ਕਰਾਂਗਾ" in pa_male

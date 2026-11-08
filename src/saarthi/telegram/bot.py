@@ -10,6 +10,8 @@ from aiogram.types import (
     CallbackQuery,
     TelegramObject,
     FSInputFile,
+    BotCommand,
+    ReplyKeyboardRemove,
 )
 from aiogram.client.default import DefaultBotProperties
 
@@ -19,7 +21,7 @@ from saarthi.database.repository import DisputeRepository
 from saarthi.agent.state import ConsumerDostState
 from saarthi.agent.graph import get_compiled_graph, run_atomic_generation
 from saarthi.speech.gnani_tts import tts_service, SUPPORTED_INDIC_LANGUAGES
-from saarthi.agent.voice_prompts import VoicePromptComposer
+from saarthi.agent.voice_prompts import VoicePromptComposer, get_voice_gender
 from saarthi.telegram.keyboards import (
     get_welcome_keyboard,
     get_confirmation_keyboard,
@@ -59,20 +61,37 @@ async def send_voice_with_fallback(
     return False
 
 
-async def get_or_create_welcome_voice(lang: str = "hi-IN") -> Path | None:
+async def setup_bot_commands(bot: Bot) -> None:
+    """Register menu commands with Telegram so they appear in the input box menu."""
+    commands = [
+        BotCommand(command="start", description="Start SAARTHI assistance"),
+        BotCommand(command="lang", description="Choose language / भाषा चुनें"),
+        BotCommand(command="gender", description="Choose voice & gender / आवाज़ और लिंग चुनें"),
+        BotCommand(command="newdispute", description="Start fresh dispute session"),
+        BotCommand(command="mycases", description="View past dispute cases"),
+        BotCommand(command="privacy", description="Purge personal data"),
+    ]
+    try:
+        await bot.set_my_commands(commands)
+        logger.info("Registered Telegram input box menu commands: /lang, /gender, etc.")
+    except Exception as e:
+        logger.warning(f"Failed to register Telegram bot commands: {e}")
+
+
+async def get_or_create_welcome_voice(lang: str = "hi-IN", voice: str = "Shivani") -> Path | None:
     """Get cached welcome audio or synthesize a new one using Timbre v3.0."""
     cache_dir = settings.data_dir / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / f"welcome_{lang}.wav"
+    cache_path = cache_dir / f"welcome_{lang}_{voice}.wav"
     if cache_path.exists():
         return cache_path
 
-    script = VoicePromptComposer.compose_welcome(lang)
+    script = VoicePromptComposer.compose_welcome(lang, voice=voice)
     return await tts_service.synthesize_speech(
         text=script,
         output_path=cache_path,
         language=lang,
-        persona="empathetic",
+        voice=voice,
         model="timbre-v3.0",
     )
 
@@ -206,7 +225,8 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
 
         # 1. Voice-first greeting
-        welcome_voice = await get_or_create_welcome_voice("hi-IN")
+        voice = saved_voice if incomplete_case else "Shivani"
+        welcome_voice = await get_or_create_welcome_voice("hi-IN", voice=voice)
         await send_voice_with_fallback(
             bot=bot,
             chat_id=chat_id,
@@ -214,10 +234,10 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             caption="<b>SAARTHI:</b> Voice Grievance Assistant (Gnani Timbre v3.0)",
         )
 
-        # 2. Companion text and interactive keyboard
+        # 2. Companion text and clean input area (removes persistent custom keyboards)
         await message.answer(
             format_welcome_message(),
-            reply_markup=get_welcome_keyboard(),
+            reply_markup=ReplyKeyboardRemove(),
         )
 
     @dp.callback_query(F.data == "session:resume")
@@ -249,8 +269,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             await callback.message.answer(prompt)
         else:
             await callback.message.answer(
-                "<b>Resuming your case:</b> Please speak or type your grievance update to proceed.",
-                reply_markup=get_welcome_keyboard(),
+                "<b>Resuming your case:</b> Please speak or type your grievance update to proceed."
             )
         await callback.answer()
 
@@ -264,16 +283,18 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             "chat_id": chat_id,
             "thread_id": f"thread_{user_id}",
             "preferred_language": "hi-IN",
+            "preferred_voice_character": "Shivani",
             "status": "DRAFT",
         }
         await save_user_state(user_id, fresh_state)
         await callback.message.answer(
             "Previous case cleared. Please speak or type your consumer dispute to begin:",
-            reply_markup=get_welcome_keyboard(),
+            reply_markup=ReplyKeyboardRemove(),
         )
         await callback.answer()
 
     @dp.message(F.text == "Language / भाषा")
+    @dp.message(Command("lang"))
     @dp.message(Command("language"))
     async def cmd_language(message: Message):
         await message.answer(
@@ -284,10 +305,11 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
     @dp.message(F.text == "Voice / आवाज़")
     @dp.message(F.text == "Voice / आवाज")
+    @dp.message(Command("gender"))
     @dp.message(Command("voice"))
     async def cmd_voice(message: Message):
         await message.answer(
-            "<b>Select Voice Character / आवाज़ चुनें:</b>\n"
+            "<b>Select Voice Character & Gender / आवाज़ और लिंग चुनें:</b>\n"
             "Choose a voice character for spoken walkthroughs and updates:",
             reply_markup=get_voice_character_keyboard(),
         )
@@ -309,7 +331,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         await save_user_state(user_id, fresh_state)
         await message.answer(
             "Previous session cleared. Please speak or type your consumer dispute to begin.",
-            reply_markup=get_persistent_menu_keyboard(),
+            reply_markup=ReplyKeyboardRemove(),
         )
 
     @dp.message(Command("mycases"))
@@ -373,9 +395,36 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             repo = DisputeRepository(session)
             await repo.update_user_profile(user_id, preferred_voice_character=selected_voice)
 
+        gender = get_voice_gender(selected_voice)
+        gender_label = "Female / महिला" if gender == "female" else "Male / पुरुष"
+        lang = state.get("preferred_language", "hi-IN")
+
+        # Synthesize audio preview in selected voice & gender
+        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+        preview_text = (
+            f"Namaste! Main {selected_voice} hoon. <pauses> Maine aapka voice character save kar liya hai."
+            if lang.startswith("hi") else
+            f"Hello! I am {selected_voice}. <pauses> Your voice preference has been saved."
+        )
+        preview_path = settings.data_dir / "cache" / f"voice_preview_{selected_voice}_{lang}.wav"
+        preview_audio = await tts_service.synthesize_speech(
+            text=preview_text,
+            output_path=preview_path,
+            language=lang,
+            voice=selected_voice,
+            model="timbre-v3.0",
+        )
+        if preview_audio and preview_audio.exists():
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=preview_audio,
+                caption=f"<b>Voice set to {selected_voice} ({gender_label}).</b>",
+            )
+
         await callback.message.answer(
-            f"<b>Voice character set to {selected_voice}.</b>\n"
-            "Subsequent voice summaries will use this voice."
+            f"<b>Voice character set to {selected_voice} ({gender_label}).</b>\n"
+            "Subsequent voice summaries will use this voice and gender."
         )
         await callback.answer()
 
@@ -391,8 +440,9 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         lang_name = SUPPORTED_INDIC_LANGUAGES.get(selected_lang, selected_lang)
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
 
-        # Generate localized voice greeting in chosen language
-        voice_path = await get_or_create_welcome_voice(selected_lang)
+        # Generate localized voice greeting in chosen language and voice
+        voice = state.get("preferred_voice_character") or "Shivani"
+        voice_path = await get_or_create_welcome_voice(selected_lang, voice=voice)
         await send_voice_with_fallback(
             bot=bot,
             chat_id=chat_id,
@@ -402,8 +452,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
         await callback.message.answer(
             f"<b>Language set to {lang_name}.</b>\n"
-            "You can now speak or type your consumer complaint in your preferred language.",
-            reply_markup=get_welcome_keyboard(),
+            "You can now speak or type your consumer complaint in your preferred language."
         )
         await callback.answer()
 

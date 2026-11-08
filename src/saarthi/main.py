@@ -6,7 +6,7 @@ from saarthi.config import settings
 from saarthi.database.engine import init_db, AsyncSessionLocal
 from saarthi.database.repository import DisputeRepository
 from saarthi.documents.pdf_generator import register_fonts
-from saarthi.telegram.bot import create_bot_and_dispatcher
+from saarthi.telegram.bot import create_bot_and_dispatcher, setup_bot_commands
 from saarthi.logging_config import configure_logging
 from loguru import logger
 
@@ -40,6 +40,7 @@ async def main():
         sys.exit(1)
 
     bot, dp = create_bot_and_dispatcher()
+    await setup_bot_commands(bot)
     logger.info("Starting Telegram Bot polling...")
 
     try:

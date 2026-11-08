@@ -146,11 +146,13 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         target_field = missing[0]
 
     lang = state.get("preferred_language", "hi-IN")
+    voice_char = state.get("preferred_voice_character") or "Shivani"
     composed = await ResponseComposer.compose_clarification(
         known_facts=dict(state),
         target_field=target_field,
         language=lang,
         latest_user_text=state.get("raw_input_text"),
+        voice_character=voice_char,
     )
     prompt_text = composed.visible_text
     spoken_script = composed.spoken_text
@@ -163,7 +165,7 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         text=spoken_script,
         output_path=audio_path,
         language=lang,
-        persona="empathetic",
+        voice=voice_char,
         model="timbre-v3.0",
     )
 
@@ -201,6 +203,7 @@ async def node_resolve(state: ConsumerDostState) -> dict:
 
     # Synthesize assessment walkthrough audio
     lang = state.get("preferred_language", "hi-IN")
+    voice_char = state.get("preferred_voice_character") or "Shivani"
     total_rupees = claim.total_demanded_paise / 100.0
     assessment_script = VoicePromptComposer.compose_assessment(total_rupees, language=lang)
     audio_path = settings.data_dir / "artifacts" / f"Assessment_{case_ref}.wav"
@@ -208,7 +211,7 @@ async def node_resolve(state: ConsumerDostState) -> dict:
         text=assessment_script,
         output_path=audio_path,
         language=lang,
-        persona="empathetic",
+        voice=voice_char,
         model="timbre-v3.0",
     )
 

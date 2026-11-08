@@ -89,11 +89,11 @@ def get_voice_character_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Shivani (Empathetic / Female)", callback_data="voice:Shivani"),
-                InlineKeyboardButton(text="Devansh (Conversational / Male)", callback_data="voice:Devansh"),
+                InlineKeyboardButton(text="Female: Shivani (Empathetic)", callback_data="voice:Shivani"),
+                InlineKeyboardButton(text="Male: Devansh (Conversational)", callback_data="voice:Devansh"),
             ],
             [
-                InlineKeyboardButton(text="Chetana (Customer Care / Female)", callback_data="voice:Chetana"),
+                InlineKeyboardButton(text="Female: Chetana (Customer Care)", callback_data="voice:Chetana"),
             ],
         ]
     )
