@@ -52,6 +52,7 @@ class SaarthiState(TypedDict, total=False):
     bundle_errors: list[str] | None
     progress_callback: Any
     llm_engine: str | None
+    neurons_model: str | None
 
 
 # Backward-compatible alias

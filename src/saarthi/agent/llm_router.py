@@ -26,6 +26,33 @@ async def _notify_progress(cb: Any, text: str) -> None:
         pass
 
 
+NEURONS_NANO_FREE_MODELS = [
+    "nvidia/nemotron-3.5-super-vl:free",
+    "cohere/north-mini-code:free",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+]
+
+MODEL_DISPLAY_NAMES = {
+    "nvidia/nemotron-3.5-super-vl:free": "Nemotron 3.5 Super VL",
+    "cohere/north-mini-code:free": "North Mini Code",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": "Nemotron 3 Nano Omni 30B",
+}
+
+
+def get_candidate_models(preferred_model: str | None = None) -> list[str]:
+    """Return ordered list of OpenRouter free models with auto-fallback."""
+    candidates = []
+    if preferred_model and preferred_model != "auto":
+        candidates.append(preferred_model)
+    elif settings.openrouter_model and settings.openrouter_model != "auto":
+        candidates.append(settings.openrouter_model)
+
+    for m in NEURONS_NANO_FREE_MODELS:
+        if m not in candidates:
+            candidates.append(m)
+    return candidates
+
+
 class LLMRouter:
     def __init__(self):
         self.gemini_key = settings.gemini_api_key
@@ -37,6 +64,7 @@ class LLMRouter:
         self,
         user_text: str,
         progress_callback: Any = None,
+        preferred_model: str | None = None,
     ) -> tuple[DisputeCaseDraft, int]:
         """Cascading fact extractor.
         
@@ -50,25 +78,16 @@ class LLMRouter:
 
         # Tier 1: Neurons Nano (OpenRouter Free Models)
         if self.openrouter_key:
-            await _notify_progress(progress_callback, "Connecting to Neurons Nano...")
-
             import httpx
-            models_to_try = [
-                settings.openrouter_model or "google/gemma-4-31b-it:free",
-                "google/gemma-4-31b-it:free",
-                "nvidia/nemotron-3.5-lightning:free",
-                "liquid/lfm-2.5-2.6b:free",
-            ]
-            seen_models = set()
+            models_to_try = get_candidate_models(preferred_model)
             headers = {
                 "Authorization": f"Bearer {self.openrouter_key}",
                 "HTTP-Referer": "https://github.com/codebysnorlax/Saarthi",
                 "X-Title": "SAARTHI Consumer Grievance Assistant",
             }
             for model_name in models_to_try:
-                if model_name in seen_models:
-                    continue
-                seen_models.add(model_name)
+                display = MODEL_DISPLAY_NAMES.get(model_name, model_name.split("/")[-1].replace(":free", ""))
+                await _notify_progress(progress_callback, f"Connecting to Neurons Nano ({display})...")
                 try:
                     async with httpx.AsyncClient(timeout=6.0) as http_client:
                         res = await http_client.post(
@@ -91,9 +110,11 @@ class LLMRouter:
                             data = json.loads(content)
                             draft = DisputeCaseDraft(**data)
                             draft.check_missing_fields()
-                            self.last_engine = "Neurons Nano"
-                            await _notify_progress(progress_callback, "Connected to Neurons Nano\nThinking...")
+                            self.last_engine = f"Neurons Nano ({display})"
+                            await _notify_progress(progress_callback, f"Connected to Neurons Nano ({display})\nThinking...")
                             return draft, 1
+                        else:
+                            logger.warning(f"Tier 1 OpenRouter call failed for {model_name} with status {res.status_code}")
                 except Exception as e:
                     logger.warning(f"Tier 1 OpenRouter call failed for {model_name}: {e}")
 

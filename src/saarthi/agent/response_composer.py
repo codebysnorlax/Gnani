@@ -15,6 +15,7 @@ from typing import Any
 from saarthi.config import settings
 from saarthi.domain.calculator import format_inr
 from saarthi.speech.tags import strip_audio_tags
+from saarthi.agent.llm_router import get_candidate_models, MODEL_DISPLAY_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +215,7 @@ class ResponseComposer:
         latest_user_text: str | None = None,
         voice_character: str = "Shivani",
         progress_callback: Any = None,
+        preferred_model: str | None = None,
     ) -> ComposedResponse:
         """Compose dynamic clarification response via OpenRouter -> Gemini -> Template cascade."""
         display_name, reason = cls._get_field_meta(target_field, language)
@@ -258,20 +260,7 @@ class ResponseComposer:
 
         # Tier 1: Neurons Nano (OpenRouter Free Models)
         if settings.openrouter_api_key:
-            await _notify_progress(progress_callback, "Connecting to Neurons Nano...")
-            candidate_models = []
-            if settings.openrouter_model:
-                candidate_models.append(settings.openrouter_model)
-            if settings.llm_model and ":free" in settings.llm_model and settings.llm_model not in candidate_models:
-                candidate_models.append(settings.llm_model)
-            for m in [
-                "google/gemma-4-31b-it:free",
-                "nvidia/nemotron-3.5-lightning:free",
-                "liquid/lfm-2.5-2.6b:free",
-            ]:
-                if m not in candidate_models:
-                    candidate_models.append(m)
-
+            candidate_models = get_candidate_models(preferred_model)
             import httpx
             headers = {
                 "Authorization": f"Bearer {settings.openrouter_api_key}",
@@ -279,6 +268,8 @@ class ResponseComposer:
                 "X-Title": "SAARTHI Consumer Grievance Assistant",
             }
             for model_name in candidate_models:
+                display = MODEL_DISPLAY_NAMES.get(model_name, model_name.split("/")[-1].replace(":free", ""))
+                await _notify_progress(progress_callback, f"Connecting to Neurons Nano ({display})...")
                 try:
                     async with httpx.AsyncClient(timeout=7.0) as http_client:
                         res = await http_client.post(
@@ -302,12 +293,12 @@ class ResponseComposer:
                             visible = data.get("visible_text")
                             spoken = data.get("spoken_text")
                             if visible and spoken:
-                                await _notify_progress(progress_callback, "Connected to Neurons Nano\nThinking...")
+                                await _notify_progress(progress_callback, f"Connected to Neurons Nano ({display})\nThinking...")
                                 return ComposedResponse(
                                     visible_text=visible,
                                     spoken_text=sanitize_speech_tags(spoken, max_tags=1),
                                     target_field=target_field,
-                                    engine="Neurons Nano",
+                                    engine=f"Neurons Nano ({display})",
                                 )
                         else:
                             logger.warning(f"OpenRouter model {model_name} returned status {res.status_code}")

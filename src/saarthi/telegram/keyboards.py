@@ -150,3 +150,53 @@ def get_dossier_action_keyboard(
             ],
         ]
     )
+
+
+def get_neurons_keyboard(current_model: str | None = None) -> InlineKeyboardMarkup:
+    """Keyboard for selecting Neurons OpenRouter AI model without emoji."""
+    curr = current_model or "auto"
+
+    btn_super_vl = "Nemotron 3.5 Super VL (Free)"
+    if curr in ("nvidia/nemotron-3.5-super-vl:free", "super_vl"):
+        btn_super_vl = "[Active] Nemotron 3.5 Super VL"
+
+    btn_north = "North Mini Code (Free)"
+    if curr in ("cohere/north-mini-code:free", "north_mini"):
+        btn_north = "[Active] North Mini Code"
+
+    btn_omni = "Nemotron 3 Nano Omni 30B (Free)"
+    if curr in ("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "nano_omni"):
+        btn_omni = "[Active] Nemotron 3 Nano Omni 30B"
+
+    btn_auto = "Auto (Cascade & Fallback)"
+    if curr in ("auto", "", None):
+        btn_auto = "[Active] Auto (Cascade & Fallback)"
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=btn_super_vl,
+                    callback_data="neurons:super_vl",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=btn_north,
+                    callback_data="neurons:north_mini",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=btn_omni,
+                    callback_data="neurons:nano_omni",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=btn_auto,
+                    callback_data="neurons:auto",
+                )
+            ],
+        ]
+    )

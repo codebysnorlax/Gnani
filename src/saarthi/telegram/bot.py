@@ -32,6 +32,7 @@ from saarthi.telegram.keyboards import (
     get_resume_session_keyboard,
     get_persistent_menu_keyboard,
     get_voice_character_keyboard,
+    get_neurons_keyboard,
 )
 from saarthi.telegram.formatters import (
     format_welcome_message,
@@ -44,6 +45,20 @@ logger = logging.getLogger(__name__)
 
 # Active session cache per user: user_id -> ConsumerDostState
 user_sessions: dict[str, ConsumerDostState] = {}
+
+NEURONS_KEY_TO_MODEL = {
+    "super_vl": "nvidia/nemotron-3.5-super-vl:free",
+    "north_mini": "cohere/north-mini-code:free",
+    "nano_omni": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "auto": "auto",
+}
+
+NEURONS_MODEL_TO_NAME = {
+    "nvidia/nemotron-3.5-super-vl:free": "Nemotron 3.5 Super VL",
+    "cohere/north-mini-code:free": "North Mini Code",
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": "Nemotron 3 Nano Omni 30B",
+    "auto": "Auto (Cascade & Fallback)",
+}
 
 
 async def send_voice_with_fallback(
@@ -67,6 +82,7 @@ async def setup_bot_commands(bot: Bot) -> None:
     """Register menu commands with Telegram so they appear in the input box menu."""
     commands = [
         BotCommand(command="start", description="Start SAARTHI assistance"),
+        BotCommand(command="neurons", description="Choose Neurons model / AI मॉडल चुनें"),
         BotCommand(command="lang", description="Choose language / भाषा चुनें"),
         BotCommand(command="gender", description="Choose voice & gender / आवाज़ और लिंग चुनें"),
         BotCommand(command="newdispute", description="Start fresh dispute session"),
@@ -318,6 +334,24 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             reply_markup=get_voice_character_keyboard(),
         )
 
+    @dp.message(Command("neurons"))
+    async def cmd_neurons(message: Message):
+        user_id = str(message.from_user.id)
+        chat_id = str(message.chat.id)
+        state = await get_or_create_user_state(user_id, chat_id)
+        curr = state.get("neurons_model") or "auto"
+        curr_name = NEURONS_MODEL_TO_NAME.get(curr, curr)
+        await message.answer(
+            "<b>Select Neurons AI Model / AI मॉडल चुनें:</b>\n\n"
+            "Choose which OpenRouter free model to power the SAARTHI brain:\n"
+            "1. <b>Nemotron 3.5 Super VL</b>: Fast multimodal language reasoning.\n"
+            "2. <b>North Mini Code</b>: Precise instruction adherence and structuring.\n"
+            "3. <b>Nemotron 3 Nano Omni 30B</b>: Deep reasoning.\n"
+            "4. <b>Auto</b>: Dynamically cascades across all models, falling back automatically if any model is rate-limited or unavailable.\n\n"
+            f"<b>Active Model:</b> <code>{curr_name}</code>",
+            reply_markup=get_neurons_keyboard(curr),
+        )
+
     @dp.message(Command("newdispute"))
     @dp.message(Command("cancel"))
     async def cmd_new_dispute(message: Message):
@@ -431,6 +465,27 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             "Subsequent voice summaries will use this voice and gender."
         )
         await callback.answer()
+
+    @dp.callback_query(F.data.startswith("neurons:"))
+    async def handle_neurons_select(callback: CallbackQuery):
+        key = callback.data.split("neurons:")[1]
+        model_id = NEURONS_KEY_TO_MODEL.get(key, "auto")
+        user_id = str(callback.from_user.id)
+        chat_id = str(callback.message.chat.id)
+        state = await get_or_create_user_state(user_id, chat_id)
+        state["neurons_model"] = model_id
+        await save_user_state(user_id, state)
+
+        model_name = NEURONS_MODEL_TO_NAME.get(model_id, model_id)
+        if callback.message:
+            await callback.message.edit_text(
+                "<b>Neurons AI Model Updated:</b>\n\n"
+                f"Active Model: <code>{model_name}</code>\n\n"
+                "SAARTHI will use this model for entity extraction and dynamic conversation. "
+                "If the selected model encounters rate limits, it will automatically fallback to ensure uninterrupted guidance.",
+                reply_markup=get_neurons_keyboard(model_id),
+            )
+        await callback.answer(f"Selected: {model_name}")
 
     @dp.callback_query(F.data.startswith("lang:"))
     async def handle_language_select(callback: CallbackQuery):

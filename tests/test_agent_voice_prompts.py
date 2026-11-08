@@ -249,9 +249,28 @@ async def test_neurons_progress_callback_and_cascade():
         )
 
         assert res.engine == "Neurons Mini"
-        assert "Connecting to Neurons Nano..." in progress_events
+        assert any("Connecting to Neurons Nano" in e for e in progress_events)
         assert "Could not connect to Neurons Nano. Connecting to Neurons Mini..." in progress_events
         assert "Connected to Neurons Mini\nThinking..." in progress_events
+
+
+def test_neurons_candidate_models_selection_and_auto_order():
+    from saarthi.agent.llm_router import get_candidate_models, NEURONS_NANO_FREE_MODELS
+
+    # Auto mode: returns all 3 models in order
+    models_auto = get_candidate_models("auto")
+    assert models_auto == [
+        "nvidia/nemotron-3.5-super-vl:free",
+        "cohere/north-mini-code:free",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    ]
+
+    # Specific model chosen: placed first, with others as fallback
+    models_specific = get_candidate_models("cohere/north-mini-code:free")
+    assert models_specific[0] == "cohere/north-mini-code:free"
+    assert "nvidia/nemotron-3.5-super-vl:free" in models_specific
+    assert "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free" in models_specific
+    assert len(models_specific) == 3
 
 
 

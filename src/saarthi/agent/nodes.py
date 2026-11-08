@@ -80,7 +80,12 @@ async def node_parse(state: ConsumerDostState) -> dict:
     """Extract structured dispute entities via cascading LLM router."""
     sanitized = state.get("sanitized_transcript") or ""
     progress_cb = state.get("progress_callback")
-    draft, tier = await llm_router.extract_dispute_facts(sanitized, progress_callback=progress_cb)
+    neurons_model = state.get("neurons_model")
+    draft, tier = await llm_router.extract_dispute_facts(
+        sanitized,
+        progress_callback=progress_cb,
+        preferred_model=neurons_model,
+    )
 
     updates = {
         "llm_engine": getattr(llm_router, "last_engine", "Neurons Nano"),
@@ -212,6 +217,7 @@ async def node_clarify(state: ConsumerDostState) -> dict:
 
     voice_char = state.get("preferred_voice_character") or "Shivani"
     progress_cb = state.get("progress_callback")
+    neurons_model = state.get("neurons_model")
     composed = await ResponseComposer.compose_clarification(
         known_facts=dict(state),
         target_field=target_field,
@@ -219,6 +225,7 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         latest_user_text=state.get("raw_input_text"),
         voice_character=voice_char,
         progress_callback=progress_cb,
+        preferred_model=neurons_model,
     )
     prompt_text = composed.visible_text
     spoken_script = composed.spoken_text

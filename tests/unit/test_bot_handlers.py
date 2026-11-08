@@ -242,5 +242,53 @@ async def test_handle_conversational_inquiry_with_male_voice_in_english():
         assert mock_synth.call_args[1].get("language") == "en-IN"
 
 
+def test_neurons_keyboard_options_and_no_emoji():
+    from saarthi.telegram.keyboards import get_neurons_keyboard
+
+    kb = get_neurons_keyboard(current_model="auto")
+    assert len(kb.inline_keyboard) == 4
+
+    btn_texts = [row[0].text for row in kb.inline_keyboard]
+    callbacks = [row[0].callback_data for row in kb.inline_keyboard]
+
+    # Verify all 4 options are present
+    assert any("Nemotron 3.5 Super VL" in t for t in btn_texts)
+    assert any("North Mini Code" in t for t in btn_texts)
+    assert any("Nemotron 3 Nano Omni 30B" in t for t in btn_texts)
+    assert any("Auto" in t for t in btn_texts)
+
+    # Verify callback keys are compact
+    assert "neurons:super_vl" in callbacks
+    assert "neurons:north_mini" in callbacks
+    assert "neurons:nano_omni" in callbacks
+    assert "neurons:auto" in callbacks
+
+    # Verify active marker
+    assert "[Active] Auto" in btn_texts[3]
+
+    # Switch active
+    kb2 = get_neurons_keyboard(current_model="cohere/north-mini-code:free")
+    btn_texts2 = [row[0].text for row in kb2.inline_keyboard]
+    assert "[Active] North Mini Code" in btn_texts2[1]
+
+
+@pytest.mark.asyncio
+async def test_setup_bot_commands_includes_neurons():
+    from saarthi.telegram.bot import setup_bot_commands
+
+    mock_bot = MagicMock()
+    mock_bot.set_my_commands = AsyncMock()
+
+    await setup_bot_commands(mock_bot)
+    mock_bot.set_my_commands.assert_awaited_once()
+
+    registered_commands = mock_bot.set_my_commands.call_args[0][0]
+    cmd_names = [c.command for c in registered_commands]
+    assert "neurons" in cmd_names
+    assert "lang" in cmd_names
+    assert "gender" in cmd_names
+
+
+
 
 

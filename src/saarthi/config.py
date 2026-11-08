@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     primary_llm_provider: str = "openrouter"
     llm_model: str = "gemini-3.5-flash-lite"
-    openrouter_model: str = "google/gemma-4-31b-it:free"
+    openrouter_model: str = "auto"
 
     # Database
     database_url: str = "sqlite+aiosqlite:///data/saarthi.db"
