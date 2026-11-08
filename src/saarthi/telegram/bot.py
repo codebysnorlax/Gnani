@@ -90,8 +90,10 @@ async def setup_bot_commands(bot: Bot) -> None:
         BotCommand(command="privacy", description="Purge personal data"),
     ]
     try:
-        await bot.set_my_commands(commands)
-        logger.info("Registered Telegram input box menu commands: /lang, /gender, etc.")
+        from aiogram.types import BotCommandScopeDefault, BotCommandScopeAllPrivateChats
+        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        logger.info("Registered Telegram input box menu commands: /neurons, /lang, /gender, etc.")
     except Exception as e:
         logger.warning(f"Failed to register Telegram bot commands: {e}")
 
@@ -417,6 +419,25 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         await callback.message.answer(
             "<b>Select Voice Character / आवाज़ चुनें:</b>",
             reply_markup=get_voice_character_keyboard(),
+        )
+        await callback.answer()
+
+    @dp.callback_query(F.data == "menu:neurons")
+    async def handle_menu_neurons(callback: CallbackQuery):
+        user_id = str(callback.from_user.id)
+        chat_id = str(callback.message.chat.id)
+        state = await get_or_create_user_state(user_id, chat_id)
+        curr = state.get("neurons_model") or "auto"
+        curr_name = NEURONS_MODEL_TO_NAME.get(curr, curr)
+        await callback.message.answer(
+            "<b>Select Neurons AI Model / AI मॉडल चुनें:</b>\n\n"
+            "Choose which OpenRouter free model to power the SAARTHI brain:\n"
+            "1. <b>Nemotron 3.5 Super VL</b>: Fast multimodal language reasoning.\n"
+            "2. <b>North Mini Code</b>: Precise instruction adherence and structuring.\n"
+            "3. <b>Nemotron 3 Nano Omni 30B</b>: Deep reasoning.\n"
+            "4. <b>Auto</b>: Dynamically cascades across all models, falling back automatically if any model is rate-limited or unavailable.\n\n"
+            f"<b>Active Model:</b> <code>{curr_name}</code>",
+            reply_markup=get_neurons_keyboard(curr),
         )
         await callback.answer()
 

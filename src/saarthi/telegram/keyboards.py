@@ -34,6 +34,12 @@ def get_welcome_keyboard() -> InlineKeyboardMarkup:
                     callback_data="menu:voice",
                 ),
             ],
+            [
+                InlineKeyboardButton(
+                    text="AI Neurons / AI मॉडल चुनें",
+                    callback_data="menu:neurons",
+                ),
+            ],
         ]
     )
 
