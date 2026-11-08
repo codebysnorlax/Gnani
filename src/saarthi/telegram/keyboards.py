@@ -13,7 +13,10 @@ def get_persistent_menu_keyboard() -> ReplyKeyboardMarkup:
             [
                 KeyboardButton(text="Language / भाषा"),
                 KeyboardButton(text="Voice / आवाज़"),
-            ]
+            ],
+            [
+                KeyboardButton(text="Neurons / AI मॉडल"),
+            ],
         ],
         resize_keyboard=True,
         is_persistent=True,

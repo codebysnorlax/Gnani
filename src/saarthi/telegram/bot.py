@@ -91,9 +91,10 @@ async def setup_bot_commands(bot: Bot) -> None:
     ]
     try:
         from aiogram.types import BotCommandScopeDefault, BotCommandScopeAllPrivateChats
-        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
-        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
-        logger.info("Registered Telegram input box menu commands: /neurons, /lang, /gender, etc.")
+        for scope in [BotCommandScopeDefault(), BotCommandScopeAllPrivateChats()]:
+            for lang in [None, "en", "hi"]:
+                await bot.set_my_commands(commands, scope=scope, language_code=lang)
+        logger.info("Registered Telegram input box menu commands: /neurons, /lang, /gender across scopes and languages.")
     except Exception as e:
         logger.warning(f"Failed to register Telegram bot commands: {e}")
 
@@ -336,6 +337,9 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             reply_markup=get_voice_character_keyboard(),
         )
 
+    @dp.message(F.text == "Neurons / AI मॉडल")
+    @dp.message(F.text == "Neurons")
+    @dp.message(F.text == "/neurons")
     @dp.message(Command("neurons"))
     async def cmd_neurons(message: Message):
         user_id = str(message.from_user.id)

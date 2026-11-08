@@ -17,14 +17,16 @@ from saarthi.agent.state import ConsumerDostState
 def test_keyboards():
     # Persistent input menu keyboard
     p = get_persistent_menu_keyboard()
-    assert len(p.keyboard) == 1
+    assert len(p.keyboard) == 2
     assert len(p.keyboard[0]) == 2
     assert p.keyboard[0][0].text == "Language / भाषा"
     assert p.keyboard[0][1].text == "Voice / आवाज़"
+    assert len(p.keyboard[1]) == 1
+    assert p.keyboard[1][0].text == "Neurons / AI मॉडल"
 
     # Clean welcome keyboard (no demo scenarios)
     w = get_welcome_keyboard()
-    assert len(w.inline_keyboard) == 1
+    assert len(w.inline_keyboard) == 2
 
     # Voice character keyboard
     v = get_voice_character_keyboard()

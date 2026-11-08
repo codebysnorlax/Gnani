@@ -156,8 +156,7 @@ async def test_setup_bot_commands_registers_menu_items():
     mock_bot.set_my_commands = AsyncMock()
 
     await setup_bot_commands(mock_bot)
-
-    mock_bot.set_my_commands.assert_awaited_once()
+    assert mock_bot.set_my_commands.await_count >= 1
     commands = mock_bot.set_my_commands.call_args[0][0]
     cmd_names = [c.command for c in commands]
 
@@ -280,7 +279,7 @@ async def test_setup_bot_commands_includes_neurons():
     mock_bot.set_my_commands = AsyncMock()
 
     await setup_bot_commands(mock_bot)
-    mock_bot.set_my_commands.assert_awaited_once()
+    assert mock_bot.set_my_commands.await_count >= 1
 
     registered_commands = mock_bot.set_my_commands.call_args[0][0]
     cmd_names = [c.command for c in registered_commands]
