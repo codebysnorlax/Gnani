@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     openrouter_api_key: str = ""
     primary_llm_provider: str = "gemini"
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-3.8-flash"
 
     # Database
     database_url: str = "sqlite+aiosqlite:///data/consumerdost.db"

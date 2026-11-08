@@ -88,3 +88,65 @@ async def test_synthesize_speech_fallback_demo(tmp_path: Path):
     assert result == output_wav
     assert output_wav.exists()
     assert output_wav.read_bytes().startswith(b"RIFF")
+
+
+@pytest.mark.asyncio
+async def test_tts_retry_on_failure(tmp_path: Path):
+    from gnani.tts.exceptions import GnaniTTSError
+
+    mock_client = MagicMock()
+    output_wav = tmp_path / "retry_output.wav"
+
+    calls = 0
+    def side_effect(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise GnaniTTSError("Network timeout")
+        output_wav.write_bytes(b"RIFF retried wav data")
+        return b"RIFF retried wav data"
+
+    mock_client.synthesize.side_effect = side_effect
+
+    service = GnaniTTSService(api_key="test_key", timeout=15)
+    service._client = mock_client
+    assert service.timeout == 15
+
+    result = await service.synthesize_speech(
+        text="Retry test",
+        output_path=output_wav,
+        language="hi-IN",
+    )
+    assert result == output_wav
+    assert calls == 2
+    assert service.last_latency_ms is not None
+
+
+@pytest.mark.asyncio
+async def test_stt_retry_on_failure():
+    from consumerdost.speech.gnani_stt import GnaniSTTService
+    from gnani.stt.exceptions import GnaniSTTError
+
+    mock_client = MagicMock()
+    calls = 0
+    def side_effect(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise GnaniSTTError("Connection reset")
+        return {"transcript": "Retried STT success transcript"}
+
+    mock_client.transcribe_bytes.side_effect = side_effect
+
+    service = GnaniSTTService(api_key="test_key", timeout=15)
+    service._client = mock_client
+    assert service.timeout == 15
+
+    transcript, is_fallback = await service.transcribe_audio(
+        audio_source=b"fake audio",
+        language_code="hi-IN",
+    )
+    assert transcript == "Retried STT success transcript"
+    assert is_fallback is False
+    assert calls == 2
+    assert service.last_latency_ms is not None

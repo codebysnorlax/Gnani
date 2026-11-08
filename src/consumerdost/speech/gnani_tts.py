@@ -73,12 +73,16 @@ def normalize_language_code(lang: str | None) -> str:
     return "hi-IN"
 
 
+import time
+
+
 class GnaniTTSService:
-    def __init__(self, api_key: str | None = None, base_url: str | None = None, timeout: int = 5):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None, timeout: int = 15):
         self.api_key = api_key or settings.gnani_api_key
         self.base_url = base_url or "https://api.vachana.ai"
         self.timeout = timeout
         self._client: GnaniTTSClient | None = None
+        self.last_latency_ms: int | None = None
 
         if self.api_key:
             try:
@@ -109,6 +113,7 @@ class GnaniTTSService:
             model: Model name, defaults to timbre-v3.0.
             persona: Role/tone alias (e.g. empathetic, conversational, professional).
         """
+        t0 = time.time()
         target_file = Path(output_path)
         target_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -128,20 +133,27 @@ class GnaniTTSService:
         sanitized_text = sanitize_tags_for_tts(text)
 
         if self._client:
-            try:
-                audio_bytes = self._client.synthesize(
-                    text=sanitized_text,
-                    voice=resolved_voice,
-                    model=model,
-                    language=lang_code,
-                    output_file=target_file,
-                )
-                if audio_bytes and target_file.exists():
-                    return target_file
-            except GnaniTTSError as e:
-                logger.warning(f"Gnani TTS API error: {e}")
-            except Exception as e:
-                logger.warning(f"Unexpected error calling Gnani TTS: {e}")
+            import asyncio
+            for attempt in range(2):
+                try:
+                    audio_bytes = await asyncio.to_thread(
+                        self._client.synthesize,
+                        text=sanitized_text,
+                        voice=resolved_voice,
+                        model=model,
+                        language=lang_code,
+                        output_file=target_file,
+                    )
+                    if audio_bytes and target_file.exists():
+                        self.last_latency_ms = int((time.time() - t0) * 1000)
+                        return target_file
+                except (GnaniTTSError, Exception) as e:
+                    if attempt == 0:
+                        logger.warning(f"Gnani TTS attempt 1 failed: {e}. Retrying once...")
+                        continue
+                    logger.warning(f"Gnani TTS call failed after retry: {e}")
+
+        self.last_latency_ms = int((time.time() - t0) * 1000)
 
         # In demo mode or fallback when synthesis fails or API is unavailable
         if settings.demo_mode or not self.api_key:

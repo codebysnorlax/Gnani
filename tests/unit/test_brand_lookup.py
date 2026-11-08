@@ -24,3 +24,25 @@ def test_fuzzy_brand_match():
 def test_unknown_brand():
     brand = resolve_brand("RandomKiranaStore12345")
     assert brand is None
+
+
+def test_unknown_brand_fallback():
+    brand = resolve_brand(
+        "Sharma Electronics",
+        fallback_if_unknown=True,
+        custom_email="support@sharma.in",
+        custom_address="12 MG Road, Bengaluru",
+    )
+    assert brand is not None
+    assert brand["canonical_name"] == "SHARMA ELECTRONICS"
+    assert brand["nodal_email"] == "support@sharma.in"
+    assert brand["registered_address"] == "12 MG Road, Bengaluru"
+    assert brand["nodal_officer_name"] == "Nodal Grievance Officer"
+
+
+def test_create_fallback_brand_default():
+    from consumerdost.domain.brands import create_fallback_brand
+    fallback = create_fallback_brand("Local Store")
+    assert fallback["canonical_name"] == "LOCAL STORE"
+    assert "grievance@localstore.com" in fallback["nodal_email"]
+    assert fallback["registered_address"] == "Registered Office, India"

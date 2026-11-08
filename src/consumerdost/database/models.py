@@ -100,3 +100,13 @@ class GeneratedArtifact(Base):
     created_at = Column(String(64), nullable=False, default=utcnow_iso)
 
     dispute_case = relationship("DisputeCase", back_populates="artifacts")
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    telegram_user_id = Column(String(64), primary_key=True, index=True)
+    state_json = Column(Text, nullable=False)
+    status = Column(String(64), nullable=False, default="INIT")
+    updated_at = Column(String(64), nullable=False, default=utcnow_iso, onupdate=utcnow_iso)
+

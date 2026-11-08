@@ -44,3 +44,20 @@ def test_compose_assessment_amount_formatting():
     assert "25,000.00" in prompt_kn
     is_valid, invalid = validate_tags(prompt_kn)
     assert is_valid
+
+
+def test_single_field_clarification_tags():
+    from consumerdost.agent.voice_prompts import SINGLE_FIELD_CLARIFICATION_TEMPLATES
+    for field, lang_map in SINGLE_FIELD_CLARIFICATION_TEMPLATES.items():
+        for lang, prompt in lang_map.items():
+            is_valid, invalid = validate_tags(prompt)
+            assert is_valid, f"Invalid tags in single field prompt for {field}/{lang}: {invalid}"
+            assert "<slow>" in prompt
+            assert "<whispers>" in prompt
+
+    # Verify composition
+    hi_name = VoicePromptComposer.compose_single_field_clarification("full_name", "hi-IN")
+    assert "naam" in hi_name.lower() or "नाम" in hi_name
+    en_order = VoicePromptComposer.compose_single_field_clarification("order_id", "en-IN")
+    assert "order id" in en_order.lower()
+

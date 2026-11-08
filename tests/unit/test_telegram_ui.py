@@ -2,6 +2,7 @@ from consumerdost.telegram.keyboards import (
     get_welcome_keyboard,
     get_confirmation_keyboard,
     get_dossier_action_keyboard,
+    get_resume_session_keyboard,
 )
 from consumerdost.telegram.formatters import (
     format_welcome_message,
@@ -13,13 +14,18 @@ from consumerdost.agent.state import ConsumerDostState
 
 def test_keyboards():
     w = get_welcome_keyboard()
-    assert len(w.inline_keyboard) == 4
+    assert len(w.inline_keyboard) == 5
 
     c = get_confirmation_keyboard()
     assert len(c.inline_keyboard) == 2
 
     d = get_dossier_action_keyboard("https://wa.me/123", "https://twitter.com/456")
     assert len(d.inline_keyboard) == 3
+
+    r = get_resume_session_keyboard()
+    assert len(r.inline_keyboard) == 1
+    assert len(r.inline_keyboard[0]) == 2
+
 
 
 def test_formatters():

@@ -42,3 +42,8 @@ class ConsumerDostState(TypedDict, total=False):
     welcome_audio_path: str | None
     status: str
     error_message: str | None
+    demo_type: str | None
+    is_demo: bool | None
+    stt_latency_ms: int | None
+    tts_latency_ms: int | None
+    clarification_target_field: str | None

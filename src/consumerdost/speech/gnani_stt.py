@@ -84,12 +84,16 @@ def detect_indic_script_language(text: str) -> str:
     return "hi-IN"
 
 
+import time
+
+
 class GnaniSTTService:
-    def __init__(self, api_key: str | None = None, base_url: str | None = None, timeout: int = 5):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None, timeout: int = 15):
         self.api_key = api_key or settings.gnani_api_key
         self.base_url = base_url or "https://api.vachana.ai"
         self.timeout = timeout
         self._client: GnaniSTTClient | None = None
+        self.last_latency_ms: int | None = None
 
         if self.api_key:
             try:
@@ -113,33 +117,42 @@ class GnaniSTTService:
         
         Returns tuple of (transcript_text, is_fallback).
         """
+        t0 = time.time()
         normalized_lang = normalize_language_code(language_code)
 
         if self._client:
-            try:
-                if isinstance(audio_source, bytes):
-                    result = self._client.transcribe_bytes(
-                        audio_source,
-                        filename=filename,
-                        language_code=normalized_lang,
-                        model=model,
-                        format=format,
-                    )
-                else:
-                    result = self._client.transcribe(
-                        audio_source,
-                        language_code=normalized_lang,
-                        model=model,
-                        format=format,
-                    )
+            import asyncio
+            for attempt in range(2):
+                try:
+                    if isinstance(audio_source, bytes):
+                        result = await asyncio.to_thread(
+                            self._client.transcribe_bytes,
+                            audio_source,
+                            filename=filename,
+                            language_code=normalized_lang,
+                            model=model,
+                            format=format,
+                        )
+                    else:
+                        result = await asyncio.to_thread(
+                            self._client.transcribe,
+                            audio_source,
+                            language_code=normalized_lang,
+                            model=model,
+                            format=format,
+                        )
 
-                transcript = result.get("transcript", "").strip()
-                if transcript:
-                    return transcript, False
-            except GnaniSTTError as e:
-                logger.warning(f"Gnani STT API error: {e}")
-            except Exception as e:
-                logger.warning(f"Unexpected error calling Gnani STT: {e}")
+                    transcript = result.get("transcript", "").strip()
+                    if transcript:
+                        self.last_latency_ms = int((time.time() - t0) * 1000)
+                        return transcript, False
+                except (GnaniSTTError, Exception) as e:
+                    if attempt == 0:
+                        logger.warning(f"Gnani STT attempt 1 failed: {e}. Retrying once...")
+                        continue
+                    logger.warning(f"Gnani STT call failed after retry: {e}")
+
+        self.last_latency_ms = int((time.time() - t0) * 1000)
 
         # Fallback to demo fixture if in DEMO_MODE or when API is unavailable
         if settings.demo_mode or not self.api_key:

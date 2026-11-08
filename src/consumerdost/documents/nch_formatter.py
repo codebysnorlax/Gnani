@@ -25,13 +25,14 @@ def format_nch_dossier(
 
     dossier_text = (
         "NATIONAL CONSUMER HELPLINE (NCH 1915 / INGRAM) GRIEVANCE FILING\n"
+        "[DISCLAIMER: Automated assistance filing. Figures are indicative calculations for discussion. Not legal advice.]\n"
         "--------------------------------------------------\n"
         f"1. Complainant: {complainant_name} ({complainant_contact})\n"
         f"2. Respondent Brand: {brand_corporate_name}\n"
         f"3. Category: {category.replace('_', ' ').title()}\n"
         f"4. Order / Txn ID: {order_id}\n"
         f"5. Transaction Date: {incident_date}\n"
-        f"6. Amount Disputed: {principal_str} (Total Claim: {total_str})\n"
+        f"6. Amount Disputed: {principal_str} (Illustrative Total Claim: {total_str})\n"
         f"7. Summary of Grievance:\n{facts_summary.strip()}\n"
         f"8. Statutory Relief Sought:\n100% refund of {principal_str} along with statutory interest "
         f"and damages for deficiency of service under Consumer Protection Act, 2019.\n"

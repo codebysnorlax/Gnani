@@ -6,6 +6,7 @@ from consumerdost.agent.state import ConsumerDostState
 
 @pytest.mark.asyncio
 async def test_node_clarify_synthesizes_voice_prompt():
+    # Priority 1: full_name when multiple are missing
     state: ConsumerDostState = {
         "telegram_user_id": "test_user_123",
         "chat_id": "12345",
@@ -17,11 +18,25 @@ async def test_node_clarify_synthesizes_voice_prompt():
     result = await node_clarify(state)
     assert result["status"] == "AWAITING_CLARIFICATION"
     assert result["clarification_prompt"] is not None
-    assert "Exact Order ID" in result["clarification_prompt"]
+    assert "Full Legal Name" in result["clarification_prompt"]
+    assert result.get("clarification_target_field") == "full_name"
     assert result["clarification_audio_path"] is not None
     audio_path = Path(result["clarification_audio_path"])
     assert audio_path.exists()
     assert audio_path.name.endswith(".wav")
+
+    # Priority 2: order_id when full_name is resolved
+    state_step2: ConsumerDostState = {
+        "telegram_user_id": "test_user_123",
+        "chat_id": "12345",
+        "thread_id": "thread_1",
+        "preferred_language": "hi-IN",
+        "missing_fields": ["order_id"],
+    }
+    result2 = await node_clarify(state_step2)
+    assert "Order ID" in result2["clarification_prompt"]
+    assert result2.get("clarification_target_field") == "order_id"
+
 
 
 @pytest.mark.asyncio

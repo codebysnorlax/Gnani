@@ -2,7 +2,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 def get_welcome_keyboard() -> InlineKeyboardMarkup:
-    """Buttons on welcome message offering 1-tap demo prompts and language selection."""
+    """Buttons on welcome message offering 1-tap demo prompts, Prisma showcases, and language selection."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -25,12 +25,41 @@ def get_welcome_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text="🔊 Prisma Showcase: Street Noise Audio",
+                    callback_data="demo:noisy",
+                ),
+                InlineKeyboardButton(
+                    text="🗣️ Prisma Showcase: Hinglish Code-Mixed",
+                    callback_data="demo:codemixed",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     text="🌐 Choose Language / भाषा चुनें",
                     callback_data="menu:language",
                 )
             ],
         ]
     )
+
+
+def get_resume_session_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard prompting user whether to resume a previous incomplete dispute."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="▶️ Continue Previous Case",
+                    callback_data="session:resume",
+                ),
+                InlineKeyboardButton(
+                    text="🔄 Start Fresh",
+                    callback_data="session:reset",
+                ),
+            ],
+        ]
+    )
+
 
 
 def get_language_keyboard() -> InlineKeyboardMarkup:

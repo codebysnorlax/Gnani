@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from consumerdost.database.models import (
     User,
+    UserSession,
     ProcessedUpdate,
     BrandDirectoryModel,
     DisputeCase,
@@ -155,8 +156,47 @@ class DisputeRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def save_session_state(self, telegram_user_id: str, state: dict) -> None:
+        """Persist user session state to SQLite."""
+        state_json = json.dumps(state, default=str)
+        status = state.get("status") or "INIT"
+        stmt = select(UserSession).where(UserSession.telegram_user_id == telegram_user_id)
+        res = await self.session.execute(stmt)
+        record = res.scalar_one_or_none()
+        if record:
+            record.state_json = state_json
+            record.status = status
+            record.updated_at = datetime.now(timezone.utc).isoformat()
+        else:
+            record = UserSession(
+                telegram_user_id=telegram_user_id,
+                state_json=state_json,
+                status=status,
+            )
+            self.session.add(record)
+        await self.session.commit()
+
+    async def load_session_state(self, telegram_user_id: str) -> dict | None:
+        """Load active user session state from SQLite."""
+        stmt = select(UserSession).where(UserSession.telegram_user_id == telegram_user_id)
+        res = await self.session.execute(stmt)
+        record = res.scalar_one_or_none()
+        if not record:
+            return None
+        try:
+            return json.loads(record.state_json)
+        except Exception:
+            return None
+
+    async def clear_session_state(self, telegram_user_id: str) -> None:
+        """Remove active user session state from SQLite."""
+        await self.session.execute(
+            delete(UserSession).where(UserSession.telegram_user_id == telegram_user_id)
+        )
+        await self.session.commit()
+
     async def delete_user_data(self, telegram_user_id: str) -> int:
-        """Purge all user disputes, artifacts, and account rows for /privacy."""
+        """Purge all user disputes, artifacts, session, and account rows for /privacy."""
         # Find cases to delete
         stmt_cases = select(DisputeCase.id).where(DisputeCase.telegram_user_id == telegram_user_id)
         res = await self.session.execute(stmt_cases)
@@ -171,6 +211,11 @@ class DisputeRepository:
             await self.session.execute(
                 delete(DisputeCase).where(DisputeCase.id.in_(case_ids))
             )
+
+        # Delete active user session
+        await self.session.execute(
+            delete(UserSession).where(UserSession.telegram_user_id == telegram_user_id)
+        )
 
         # Delete user
         await self.session.execute(

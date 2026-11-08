@@ -31,6 +31,11 @@ class ClaimBreakdown(NamedTuple):
     def total_demanded_inr(self) -> float:
         return self.total_demanded_paise / 100.0
 
+    @property
+    def illustrative_total_demand_inr(self) -> float:
+        """Illustrative pre-litigation demand estimate in INR (indicative discussion estimate, not legal advice)."""
+        return self.total_demanded_paise / 100.0
+
 
 def format_inr(amount_inr: float | Decimal) -> str:
     """Format an INR amount into standard Indian currency string (e.g. ₹14,999.00)."""

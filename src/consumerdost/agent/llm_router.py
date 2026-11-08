@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 GOLDEN_FIXTURES: list[dict] = [
     {
-        "keywords": ["flipkart", "14999", "toota", "phone"],
+        "keywords": ["flipkart", "14999", "phone"],
         "draft": DisputeCaseDraft(
             brand_raw="Flipkart Internet Private Limited",
             category="E_COMMERCE",
@@ -18,11 +18,13 @@ GOLDEN_FIXTURES: list[dict] = [
             order_id="OD3091823901",
             incident_date="2026-10-25",
             amount_paid_inr=14999.00,
+            complainant_full_name="Rohan Sharma",
+            complainant_contact="rohan@example.com",
             incident_summary="Smartphone delivered with broken screen on 25 Oct 2026; Flipkart support refused return and refund.",
         ),
     },
     {
-        "keywords": ["upi", "1200", "recharge", "utr"],
+        "keywords": ["upi", "1200", "recharge"],
         "draft": DisputeCaseDraft(
             brand_raw="PhonePe",
             category="FINTECH_UPI",
@@ -31,7 +33,24 @@ GOLDEN_FIXTURES: list[dict] = [
             order_id="123456789012",
             incident_date="2026-10-28",
             amount_paid_inr=1200.00,
+            complainant_full_name="Sunita Devi",
+            complainant_contact="9876543210",
             incident_summary="UPI payment debited from bank account on 28 Oct 2026 but recharge transaction failed and funds were not reversed within T+1 window.",
+        ),
+    },
+    {
+        "keywords": ["indigo", "6500"],
+        "draft": DisputeCaseDraft(
+            brand_raw="InterGlobe Aviation Limited (IndiGo)",
+            category="AIRLINE_TRAVEL",
+            issue_type="AIRLINE_CANCELLATION_REFUND",
+            product_name="Flight Ticket 6E-204",
+            order_id="98765432",
+            incident_date="2026-11-01",
+            amount_paid_inr=6500.00,
+            complainant_full_name="Vikram Seth",
+            complainant_contact="vikram@example.com",
+            incident_summary="IndiGo flight 6E-204 was cancelled without mandatory statutory notice; ticket refund was denied contrary to DGCA CAR regulations.",
         ),
     },
 ]
@@ -59,8 +78,12 @@ class LLMRouter:
         if self.gemini_key:
             try:
                 from google import genai
-                client = genai.Client(api_key=self.gemini_key)
-                response = client.models.generate_content(
+                from google.genai import types
+                client = genai.Client(
+                    api_key=self.gemini_key,
+                    http_options=types.HttpOptions(timeout=10000),
+                )
+                response = await client.aio.models.generate_content(
                     model=settings.llm_model,
                     contents=f"{EXTRACTION_SYSTEM_PROMPT}\n\nUSER COMPLAINT:\n{user_text}",
                 )
@@ -124,8 +147,9 @@ class LLMRouter:
 
         # Tier 3: Golden Demo Fixture
         if settings.demo_mode:
+            clean_lower = lower.replace(",", "").replace("₹", "").replace("rs.", "").replace("rs", "")
             for fix in GOLDEN_FIXTURES:
-                if all(k in lower for k in fix["keywords"]):
+                if all(k in clean_lower for k in fix["keywords"]):
                     logger.info("Tier 3: Golden Demo Fixture matched successfully")
                     draft = fix["draft"].model_copy(deep=True)
                     draft.check_missing_fields()

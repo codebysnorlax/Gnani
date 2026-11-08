@@ -64,3 +64,44 @@ async def test_repository_user_and_case_lifecycle():
         # Verify cases gone
         cases_after = await repo.get_user_cases("test_user_999")
         assert len(cases_after) == 0
+
+
+@pytest.mark.asyncio
+async def test_repository_session_persistence():
+    await init_db()
+    async with AsyncSessionLocal() as session:
+        repo = DisputeRepository(session)
+        user_id = "test_user_session_123"
+
+        # 1. Initially no session
+        initial = await repo.load_session_state(user_id)
+        assert initial is None
+
+        # 2. Save session
+        test_state = {
+            "telegram_user_id": user_id,
+            "status": "AWAITING_CONFIRMATION",
+            "amount_paid_inr": 14999.0,
+            "brand_raw": "Flipkart",
+            "missing_fields": [],
+        }
+        await repo.save_session_state(user_id, test_state)
+
+        # 3. Load session and verify
+        loaded = await repo.load_session_state(user_id)
+        assert loaded is not None
+        assert loaded["status"] == "AWAITING_CONFIRMATION"
+        assert loaded["brand_raw"] == "Flipkart"
+        assert loaded["amount_paid_inr"] == 14999.0
+
+        # 4. Update session
+        test_state["status"] = "GENERATED"
+        await repo.save_session_state(user_id, test_state)
+        updated = await repo.load_session_state(user_id)
+        assert updated["status"] == "GENERATED"
+
+        # 5. Clear session
+        await repo.clear_session_state(user_id)
+        cleared = await repo.load_session_state(user_id)
+        assert cleared is None
+

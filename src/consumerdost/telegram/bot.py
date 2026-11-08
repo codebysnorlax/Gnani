@@ -17,8 +17,7 @@ from consumerdost.config import settings
 from consumerdost.database.engine import AsyncSessionLocal, init_db
 from consumerdost.database.repository import DisputeRepository
 from consumerdost.agent.state import ConsumerDostState
-from consumerdost.agent.graph import get_compiled_graph
-from consumerdost.agent.nodes import node_bundle, node_tts
+from consumerdost.agent.graph import get_compiled_graph, run_atomic_generation
 from consumerdost.speech.gnani_tts import tts_service, SUPPORTED_INDIC_LANGUAGES
 from consumerdost.agent.voice_prompts import VoicePromptComposer
 from consumerdost.telegram.keyboards import (
@@ -26,11 +25,13 @@ from consumerdost.telegram.keyboards import (
     get_confirmation_keyboard,
     get_dossier_action_keyboard,
     get_language_keyboard,
+    get_resume_session_keyboard,
 )
 from consumerdost.telegram.formatters import (
     format_welcome_message,
     format_assessment_card,
     format_cover_email,
+    format_next_steps_card,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,7 +98,42 @@ class DeduplicationMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+async def get_or_create_user_state(user_id: str, chat_id: str) -> ConsumerDostState:
+    """Retrieve durable user session state from SQLite, or initialize default draft."""
+    async with AsyncSessionLocal() as session:
+        repo = DisputeRepository(session)
+        state = await repo.load_session_state(user_id)
+        if state is None:
+            state = {
+                "telegram_user_id": user_id,
+                "chat_id": chat_id,
+                "thread_id": f"thread_{user_id}",
+                "preferred_language": "hi-IN",
+                "status": "DRAFT",
+            }
+            await repo.save_session_state(user_id, state)
+        user_sessions[user_id] = state
+        return state
+
+
+async def save_user_state(user_id: str, state: ConsumerDostState) -> None:
+    """Persist session state to SQLite."""
+    user_sessions[user_id] = state
+    async with AsyncSessionLocal() as session:
+        repo = DisputeRepository(session)
+        await repo.save_session_state(user_id, state)
+
+
+async def clear_user_state(user_id: str) -> None:
+    """Clear session state from SQLite."""
+    user_sessions.pop(user_id, None)
+    async with AsyncSessionLocal() as session:
+        repo = DisputeRepository(session)
+        await repo.clear_session_state(user_id)
+
+
 def get_user_state(user_id: str, chat_id: str) -> ConsumerDostState:
+    """Synchronous fallback helper for backward compatibility."""
     if user_id not in user_sessions:
         user_sessions[user_id] = {
             "telegram_user_id": user_id,
@@ -125,15 +161,36 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         async with AsyncSessionLocal() as session:
             repo = DisputeRepository(session)
             await repo.get_or_create_user(user_id, chat_id)
+            existing_state = await repo.load_session_state(user_id)
 
-        # Reset draft
-        user_sessions[user_id] = {
+        # Check for unfinalized active dispute to offer session recovery
+        if existing_state and existing_state.get("status") in ("AWAITING_CONFIRMATION", "AWAITING_CLARIFICATION"):
+            claim_amt = (
+                existing_state.get("total_claim_paise", 0) / 100.0
+                if existing_state.get("total_claim_paise")
+                else existing_state.get("amount_paid_inr", 0.0)
+            )
+            brand = (existing_state.get("brand_resolved") or {}).get(
+                "corporate_name", existing_state.get("brand_raw", "Dispute")
+            )
+            await message.answer(
+                f"⚠️ <b>Previous Dispute Found:</b>\n"
+                f"You have an ongoing dispute for <b>{brand}</b> (₹{claim_amt:,.2f}).\n\n"
+                f"Status: <code>{existing_state.get('status')}</code>\n"
+                f"Would you like to resume where you left off, or start fresh?",
+                reply_markup=get_resume_session_keyboard(),
+            )
+            return
+
+        # Initialize fresh draft in SQLite
+        fresh_state = {
             "telegram_user_id": user_id,
             "chat_id": chat_id,
             "thread_id": f"thread_{user_id}",
             "preferred_language": "hi-IN",
             "status": "DRAFT",
         }
+        await save_user_state(user_id, fresh_state)
 
         # Show record_voice chat action
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
@@ -153,6 +210,59 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             reply_markup=get_welcome_keyboard(),
         )
 
+    @dp.callback_query(F.data == "session:resume")
+    async def handle_session_resume(callback: CallbackQuery):
+        user_id = str(callback.from_user.id)
+        chat_id = str(callback.message.chat.id)
+        state = await get_or_create_user_state(user_id, chat_id)
+        status = state.get("status")
+
+        if status == "AWAITING_CONFIRMATION":
+            assessment_audio = state.get("assessment_audio_path")
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=assessment_audio,
+                caption="🎙️ <b>Dispute Assessment Walkthrough:</b> Statutory claim summary.",
+            )
+            card = format_assessment_card(state)
+            await callback.message.answer(card, reply_markup=get_confirmation_keyboard())
+        elif status == "AWAITING_CLARIFICATION":
+            clarify_audio = state.get("clarification_audio_path")
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=clarify_audio,
+                caption="🎙️ <b>Voice Clarification:</b> Please listen to the details needed.",
+            )
+            prompt = state.get("clarification_prompt", "Please provide missing order or name details.")
+            await callback.message.answer(f"ℹ️ {prompt}")
+        else:
+            await callback.message.answer(
+                "▶️ <b>Resuming your case:</b> Please speak or type your grievance update to proceed.",
+                reply_markup=get_welcome_keyboard(),
+            )
+        await callback.answer()
+
+    @dp.callback_query(F.data == "session:reset")
+    async def handle_session_reset(callback: CallbackQuery):
+        user_id = str(callback.from_user.id)
+        chat_id = str(callback.message.chat.id)
+        await clear_user_state(user_id)
+        fresh_state = {
+            "telegram_user_id": user_id,
+            "chat_id": chat_id,
+            "thread_id": f"thread_{user_id}",
+            "preferred_language": "hi-IN",
+            "status": "DRAFT",
+        }
+        await save_user_state(user_id, fresh_state)
+        await callback.message.answer(
+            "🔄 Previous case cleared. Please speak or type your consumer dispute to begin:",
+            reply_markup=get_welcome_keyboard(),
+        )
+        await callback.answer()
+
     @dp.message(Command("language"))
     async def cmd_language(message: Message):
         await message.answer(
@@ -161,17 +271,29 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             reply_markup=get_language_keyboard(),
         )
 
+    @dp.message(Command("demo"))
+    async def cmd_demo(message: Message):
+        """1-tap fail-proof offline demo trigger executing in <25 seconds."""
+        await message.answer(
+            "⚡ <b>ConsumerDost Instant Fail-Proof Demo:</b>\n"
+            "Select any scenario below. The demo executes end-to-end in <25s using golden fixtures and pre-cached Gnani Timbre audio:",
+            reply_markup=get_welcome_keyboard(),
+        )
+
     @dp.message(Command("newdispute"))
     @dp.message(Command("cancel"))
     async def cmd_new_dispute(message: Message):
         user_id = str(message.from_user.id)
-        user_sessions[user_id] = {
+        chat_id = str(message.chat.id)
+        await clear_user_state(user_id)
+        fresh_state = {
             "telegram_user_id": user_id,
-            "chat_id": str(message.chat.id),
+            "chat_id": chat_id,
             "thread_id": f"thread_{user_id}",
             "preferred_language": "hi-IN",
             "status": "DRAFT",
         }
+        await save_user_state(user_id, fresh_state)
         await message.answer(
             "🔄 Previous session cleared. Please speak or type your consumer dispute to begin."
         )
@@ -202,7 +324,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             repo = DisputeRepository(session)
             deleted = await repo.delete_user_data(user_id)
 
-        user_sessions.pop(user_id, None)
+        await clear_user_state(user_id)
         await message.answer(
             f"🗑️ <b>Data Deleted:</b> {deleted} dispute records and personal data have been completely purged from SQLite."
         )
@@ -221,8 +343,9 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         selected_lang = callback.data.split(":")[1]
         user_id = str(callback.from_user.id)
         chat_id = str(callback.message.chat.id)
-        state = get_user_state(user_id, chat_id)
+        state = await get_or_create_user_state(user_id, chat_id)
         state["preferred_language"] = selected_lang
+        await save_user_state(user_id, state)
 
         lang_name = SUPPORTED_INDIC_LANGUAGES.get(selected_lang, selected_lang)
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
@@ -247,7 +370,12 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     async def handle_demo_callbacks(callback: CallbackQuery):
         demo_type = callback.data.split(":")[1]
         user_id = str(callback.from_user.id)
-        state = get_user_state(user_id, str(callback.message.chat.id))
+        chat_id = str(callback.message.chat.id)
+        state = await get_or_create_user_state(user_id, chat_id)
+
+        demo_key = "indigo" if demo_type == "flight" else demo_type
+        state["demo_type"] = demo_key
+        state["is_demo"] = True
 
         if demo_type == "flipkart":
             demo_text = (
@@ -261,6 +389,20 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
                 "Paisa bank se cut gaya par recharge fail ho gaya. UTR: 123456789012. "
                 "Mera naam Sunita Devi hai aur mobile 9876543210."
             )
+        elif demo_type == "noisy":
+            demo_text = (
+                "Bhaiya Flipkart se 14,999 ka phone mangaya tha 25 October ko. "
+                "Aas-paas bahut shor tha market me par delivery defective nikli. "
+                "Order ID OD3091823901. Complainant Rohan Sharma."
+            )
+            state["demo_type"] = "flipkart"
+        elif demo_type == "codemixed":
+            demo_text = (
+                "Maine Flipkart se 14999 inr ka phone order kiya tha on 25 October. "
+                "Screen damaged thi and customer support ne return deny kar diya. "
+                "Order ID OD3091823901. Name Rohan Sharma."
+            )
+            state["demo_type"] = "flipkart"
         else:
             demo_text = (
                 "Indigo flight 6E-204 cancelled on 2026-11-01 without notice. "
@@ -269,7 +411,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             )
 
         state["raw_input_text"] = demo_text
-        await callback.message.answer(f"<i>Processing sample grievance:</i>\n\"{demo_text}\"")
+        await callback.message.answer(f"<i>Processing grievance showcase:</i>\n\"{demo_text}\"")
         await process_workflow_turn(bot, callback.message, state)
         await callback.answer()
 
@@ -277,18 +419,15 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     async def handle_generate_bundle(callback: CallbackQuery):
         user_id = str(callback.from_user.id)
         chat_id = str(callback.message.chat.id)
-        state = get_user_state(user_id, chat_id)
+        state = await get_or_create_user_state(user_id, chat_id)
 
         await callback.message.answer("⚙️ <i>Generating your complete Tri-Fold Escalation Dossier...</i>")
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
 
-        # 1. Run bundle generator
-        bundle_res = await node_bundle(state)
-        state.update(bundle_res)
-
-        # 2. Run TTS
-        tts_res = await node_tts(state)
-        state.update(tts_res)
+        # 1. Run atomic bundle and TTS generation via LangGraph
+        gen_res = await run_atomic_generation(state)
+        state.update(gen_res)
+        await save_user_state(user_id, state)
 
         # 3. Save to database
         brand_info = state.get("brand_resolved") or {}
@@ -369,6 +508,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             "Use the buttons below to open NCH WhatsApp or post your public escalation post on X immediately:",
             reply_markup=get_dossier_action_keyboard(wa_url, tw_url),
         )
+        await callback.message.answer(format_next_steps_card(state))
         await callback.answer()
 
     @dp.callback_query(F.data == "action:edit_details")
@@ -384,7 +524,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     @dp.callback_query(F.data == "action:cancel")
     async def handle_cancel(callback: CallbackQuery):
         user_id = str(callback.from_user.id)
-        user_sessions.pop(user_id, None)
+        await clear_user_state(user_id)
         await callback.message.answer("❌ Dispute draft cancelled.")
         await callback.answer()
 
@@ -398,7 +538,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
         user_id = str(message.from_user.id)
         chat_id = str(message.chat.id)
-        state = get_user_state(user_id, chat_id)
+        state = await get_or_create_user_state(user_id, chat_id)
 
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         await message.answer("🎙️ <i>Listening and transcribing with Gnani Prisma v3.0 STT...</i>")
@@ -415,7 +555,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     async def handle_text_message(message: Message):
         user_id = str(message.from_user.id)
         chat_id = str(message.chat.id)
-        state = get_user_state(user_id, chat_id)
+        state = await get_or_create_user_state(user_id, chat_id)
 
         state["raw_input_text"] = message.text
         state["voice_bytes"] = None
@@ -430,9 +570,23 @@ async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostS
     chat_id = str(message.chat.id)
     await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
+    had_voice = bool(state.get("voice_bytes"))
+
     graph = await get_compiled_graph()
     result = await graph.ainvoke(state)
     state.update(result)
+
+    # Surface "What I Heard" STT confirmation card to confirm Prisma v3.0 transcription
+    if had_voice:
+        transcript = result.get("raw_input_text") or ""
+        stt_ms = result.get("stt_latency_ms")
+        timing_str = f" ({stt_ms}ms)" if stt_ms else ""
+        await message.answer(
+            f"🎙️ <b>What I Heard:</b>\n"
+            f"<i>\"{transcript}\"</i>\n\n"
+            f"⚡ <i>Transcribed via Gnani Prisma v3.0{timing_str}</i>"
+        )
+        state["voice_bytes"] = None
 
     status = state.get("status")
     if status == "AWAITING_CLARIFICATION":
@@ -461,3 +615,8 @@ async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostS
 
     elif status == "GENERATED":
         await message.answer("Dossier generated.")
+
+    # Persist updated turn state to SQLite
+    user_id = state.get("telegram_user_id") or (str(message.from_user.id) if message.from_user else None)
+    if user_id:
+        await save_user_state(user_id, state)

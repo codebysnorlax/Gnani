@@ -42,10 +42,13 @@ async def node_ingest(state: ConsumerDostState) -> dict:
         if detected_lang:
             lang = detected_lang
 
-    return {
+    res = {
         "raw_input_text": transcript,
         "preferred_language": lang,
     }
+    if stt_service.last_latency_ms is not None:
+        res["stt_latency_ms"] = stt_service.last_latency_ms
+    return res
 
 
 async def node_scrub(state: ConsumerDostState) -> dict:
@@ -99,37 +102,67 @@ async def node_parse(state: ConsumerDostState) -> dict:
     if not current_name:
         missing.append("full_name")
 
+    if state.get("demo_type"):
+        updates["demo_type"] = state["demo_type"]
+    if state.get("is_demo"):
+        updates["is_demo"] = state["is_demo"]
+
     updates["missing_fields"] = missing
     return updates
 
+CLARIFICATION_PRIORITY = ["full_name", "order_id", "amount", "incident_date", "brand"]
+
+FIELD_PROMPTS = {
+    "full_name": (
+        "🎙️ <b>One detail needed:</b>\n"
+        "Please provide your <b>Full Legal Name</b> as Sender/Complainant on the legal notice."
+    ),
+    "order_id": (
+        "🎙️ <b>One detail needed:</b>\n"
+        "Please provide your <b>Order ID, booking PNR, or 12-digit UPI UTR</b>."
+    ),
+    "amount": (
+        "🎙️ <b>One detail needed:</b>\n"
+        "Please provide the <b>exact amount paid in INR</b> (e.g. ₹14,999)."
+    ),
+    "incident_date": (
+        "🎙️ <b>One detail needed:</b>\n"
+        "Please provide the <b>approximate transaction date</b> (e.g. 25 Oct 2026)."
+    ),
+    "brand": (
+        "🎙️ <b>One detail needed:</b>\n"
+        "Please provide the <b>Company or Brand name</b>."
+    ),
+}
+
 
 async def node_clarify(state: ConsumerDostState) -> dict:
-    """Build targeted clarification prompt and synthesize voice note with audio tags."""
+    """Build targeted progressive single-field clarification prompt and synthesize voice note with audio tags."""
     missing = state.get("missing_fields", [])
     if not missing:
         return {"clarification_prompt": None, "clarification_audio_path": None}
 
-    field_prompts = []
-    if "order_id" in missing:
-        field_prompts.append("• Exact Order ID, PNR, or 12-digit UPI UTR")
-    if "full_name" in missing:
-        field_prompts.append("• Your Full Legal Name (as Sender on the Legal Notice)")
-    if "brand" in missing:
-        field_prompts.append("• The Company or Brand name")
-    if "amount" in missing:
-        field_prompts.append("• The exact amount paid in INR (e.g. ₹1,499)")
-    if "incident_date" in missing:
-        field_prompts.append("• Approximate transaction date (e.g. 25 Oct 2026)")
+    # Select exactly one field by priority
+    target_field = None
+    for f in CLARIFICATION_PRIORITY:
+        if f in missing:
+            target_field = f
+            break
+    if not target_field:
+        target_field = missing[0]
 
-    prompt_text = (
-        "Voice grievance recorded. To generate your official Legal Demand Notice, "
-        "please type or paste the following details:\n\n"
-        + "\n".join(field_prompts)
+    prompt_text = FIELD_PROMPTS.get(
+        target_field,
+        f"🎙️ <b>One detail needed:</b>\nPlease provide your {target_field.replace('_', ' ').title()}.",
     )
 
     # Synthesize empathetic clarification audio note
     lang = state.get("preferred_language", "hi-IN")
-    spoken_script = VoicePromptComposer.compose_clarification(language=lang, missing_fields=missing)
+    spoken_script = VoicePromptComposer.compose_clarification(
+        language=lang,
+        missing_fields=missing,
+        target_field=target_field,
+    )
     user_id = state.get("telegram_user_id", "user")
     thread_id = state.get("thread_id", "thread")
     audio_path = settings.data_dir / "artifacts" / f"Clarification_{user_id}_{thread_id}.wav"
@@ -146,25 +179,19 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         "clarification_prompt": prompt_text,
         "clarification_audio_path": str(audio_res) if audio_res else None,
         "status": "AWAITING_CLARIFICATION",
+        "clarification_target_field": target_field,
     }
 
 
 async def node_resolve(state: ConsumerDostState) -> dict:
     """Resolve brand against directory, map statutes, and calculate paise claim."""
     brand_raw = state.get("brand_raw") or "Generic Vendor"
-    brand_info = resolve_brand(brand_raw)
-    if not brand_info:
-        # Fallback corporate info
-        brand_info = {
-            "canonical_name": brand_raw.upper(),
-            "aliases": [brand_raw.lower()],
-            "corporate_name": brand_raw,
-            "registered_address": "Registered Office, India",
-            "nodal_officer_name": "Nodal Grievance Officer",
-            "nodal_email": "grievance@" + brand_raw.lower().replace(" ", "") + ".com",
-            "twitter_handle": "@" + brand_raw.replace(" ", ""),
-            "category": state.get("dispute_category", "E_COMMERCE"),
-        }
+    brand_info = resolve_brand(
+        brand_raw,
+        fallback_if_unknown=True,
+        custom_email=state.get("brand_email"),
+        custom_address=state.get("brand_address"),
+    )
 
     issue_type = state.get("issue_type", "ECOMMERCE_REFUND_DELAY_OR_DENIAL")
     statute_entry = get_statute_entry(issue_type)
@@ -180,20 +207,30 @@ async def node_resolve(state: ConsumerDostState) -> dict:
 
     legal_clauses = statute_entry.cpa_sections + statute_entry.sectoral_rules
 
-    # Synthesize assessment walkthrough audio
+    # Synthesize assessment walkthrough audio (or use pre-cached demo audio)
     lang = state.get("preferred_language", "hi-IN")
     total_rupees = claim.total_demanded_paise / 100.0
-    assessment_script = VoicePromptComposer.compose_assessment(total_rupees, language=lang)
-    audio_path = settings.data_dir / "artifacts" / f"Assessment_{case_ref}.wav"
-    assessment_audio = await tts_service.synthesize_speech(
-        text=assessment_script,
-        output_path=audio_path,
-        language=lang,
-        persona="empathetic",
-        model="timbre-v3.0",
-    )
+    demo_type = state.get("demo_type")
+    cached_assessment = None
+    if demo_type:
+        candidate = settings.data_dir / "cache" / "demo" / f"assessment_{demo_type}.wav"
+        if candidate.exists():
+            cached_assessment = candidate
 
-    return {
+    if cached_assessment:
+        assessment_audio = cached_assessment
+    else:
+        assessment_script = VoicePromptComposer.compose_assessment(total_rupees, language=lang)
+        audio_path = settings.data_dir / "artifacts" / f"Assessment_{case_ref}.wav"
+        assessment_audio = await tts_service.synthesize_speech(
+            text=assessment_script,
+            output_path=audio_path,
+            language=lang,
+            persona="empathetic",
+            model="timbre-v3.0",
+        )
+
+    res = {
         "brand_resolved": brand_info,
         "case_reference_id": case_ref,
         "legal_clauses": legal_clauses,
@@ -205,6 +242,9 @@ async def node_resolve(state: ConsumerDostState) -> dict:
         "assessment_audio_path": str(assessment_audio) if assessment_audio else None,
         "status": "AWAITING_CONFIRMATION",
     }
+    if tts_service.last_latency_ms is not None:
+        res["tts_latency_ms"] = tts_service.last_latency_ms
+    return res
 
 
 async def node_bundle(state: ConsumerDostState) -> dict:
@@ -272,13 +312,23 @@ async def node_bundle(state: ConsumerDostState) -> dict:
 
 
 async def node_tts(state: ConsumerDostState) -> dict:
-    """Generate closing audio note using Gnani Timbre v3.0."""
+    """Generate closing audio note using Gnani Timbre v3.0 (or pre-cached demo audio)."""
     case_ref = state.get("case_reference_id") or "CD-0001"
     audio_path = settings.data_dir / "artifacts" / f"Audio_Summary_{case_ref}.wav"
     lang = state.get("preferred_language", "hi-IN")
 
-    result_path = await tts_service.synthesize_action_summary(
-        output_path=audio_path,
-        language=lang,
-    )
+    demo_type = state.get("demo_type")
+    cached_closing = None
+    if demo_type:
+        candidate = settings.data_dir / "cache" / "demo" / f"closing_{demo_type}.wav"
+        if candidate.exists():
+            cached_closing = candidate
+
+    if cached_closing:
+        result_path = cached_closing
+    else:
+        result_path = await tts_service.synthesize_action_summary(
+            output_path=audio_path,
+            language=lang,
+        )
     return {"tts_audio_path": str(result_path) if result_path else None}

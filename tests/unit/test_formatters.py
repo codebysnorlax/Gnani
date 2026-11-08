@@ -50,3 +50,32 @@ def test_twitter_formatter_long_snippet_truncation():
     )
 
     assert len(res["tweet_text"]) <= 280
+
+
+def test_multilingual_disclaimers_cover_all_10_languages():
+    from consumerdost.telegram.formatters import MULTILINGUAL_DISCLAIMERS, get_legal_disclaimer
+    languages = ["hi-IN", "en-IN", "kn-IN", "ta-IN", "te-IN", "mr-IN", "bn-IN", "gu-IN", "ml-IN", "pa-IN"]
+    for lang in languages:
+        assert lang in MULTILINGUAL_DISCLAIMERS
+        disclaimer = get_legal_disclaimer(lang)
+        assert len(disclaimer) > 20
+
+
+def test_assessment_card_branding_and_disclaimer():
+    from consumerdost.telegram.formatters import format_assessment_card, format_next_steps_card
+    state = {
+        "preferred_language": "hi-IN",
+        "brand_raw": "Flipkart",
+        "principal_paise": 1499900,
+        "total_claim_paise": 1849900,
+        "stt_latency_ms": 150,
+        "tts_latency_ms": 280,
+    }
+    card = format_assessment_card(state)
+    assert "Illustrative Pre-Litigation Demand Estimate" in card
+    assert "Powered by Gnani Prisma v3.0 + Timbre v3.0 (STT: 150ms, TTS: 280ms)" in card
+    assert "Disclaimer:" in card
+
+    steps = format_next_steps_card(state)
+    assert "What to Do Next" in steps
+    assert "Powered by Gnani Prisma v3.0 + Timbre v3.0" in steps

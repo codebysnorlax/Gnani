@@ -43,11 +43,22 @@ class BrandDirectory:
                 if alias_clean not in self.all_aliases:
                     self.all_aliases.append(alias_clean)
 
-    def resolve(self, query: str | None, threshold: float = 85.0) -> BrandInfo | None:
+    def resolve(
+        self,
+        query: str | None,
+        threshold: float = 85.0,
+        fallback_if_unknown: bool = False,
+        custom_email: str | None = None,
+        custom_address: str | None = None,
+    ) -> BrandInfo | None:
         if not query:
+            if fallback_if_unknown:
+                return create_fallback_brand("Unknown Vendor", nodal_email=custom_email, registered_address=custom_address)
             return None
         q = query.strip().lower()
         if not q:
+            if fallback_if_unknown:
+                return create_fallback_brand("Unknown Vendor", nodal_email=custom_email, registered_address=custom_address)
             return None
 
         # 1. Exact match
@@ -55,25 +66,59 @@ class BrandDirectory:
             return self.alias_to_brand[q]
 
         # 2. RapidFuzz match against all aliases
-        if not self.all_aliases:
-            return None
+        if self.all_aliases:
+            match = process.extractOne(
+                q,
+                self.all_aliases,
+                scorer=fuzz.WRatio,
+                score_cutoff=threshold,
+            )
+            if match:
+                matched_alias, score, _ = match
+                return self.alias_to_brand[matched_alias]
 
-        match = process.extractOne(
-            q,
-            self.all_aliases,
-            scorer=fuzz.WRatio,
-            score_cutoff=threshold,
-        )
-        if match:
-            matched_alias, score, _ = match
-            return self.alias_to_brand[matched_alias]
+        if fallback_if_unknown:
+            return create_fallback_brand(query, nodal_email=custom_email, registered_address=custom_address)
 
         return None
+
+
+def create_fallback_brand(
+    name: str,
+    nodal_email: str | None = None,
+    registered_address: str | None = None,
+    category: str = "OTHER",
+) -> BrandInfo:
+    """Create a structured BrandInfo for an unindexed or local vendor."""
+    clean_name = name.strip() if name else "Unknown Vendor"
+    slug = clean_name.lower().replace(" ", "")
+    return {
+        "canonical_name": clean_name.upper(),
+        "aliases": [clean_name.lower()],
+        "corporate_name": clean_name,
+        "registered_address": registered_address or "Registered Office, India",
+        "nodal_officer_name": "Nodal Grievance Officer",
+        "nodal_email": nodal_email or f"grievance@{slug}.com",
+        "twitter_handle": f"@{clean_name.replace(' ', '')}",
+        "category": category,
+    }
 
 
 # Global singleton instance
 brand_directory = BrandDirectory()
 
 
-def resolve_brand(query: str | None, threshold: float = 85.0) -> BrandInfo | None:
-    return brand_directory.resolve(query, threshold=threshold)
+def resolve_brand(
+    query: str | None,
+    threshold: float = 85.0,
+    fallback_if_unknown: bool = False,
+    custom_email: str | None = None,
+    custom_address: str | None = None,
+) -> BrandInfo | None:
+    return brand_directory.resolve(
+        query,
+        threshold=threshold,
+        fallback_if_unknown=fallback_if_unknown,
+        custom_email=custom_email,
+        custom_address=custom_address,
+    )
