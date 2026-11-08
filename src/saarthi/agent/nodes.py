@@ -43,6 +43,8 @@ async def node_ingest(state: ConsumerDostState) -> dict:
     res = {
         "raw_input_text": transcript,
         "preferred_language": user_lang,
+        "preferred_voice_character": state.get("preferred_voice_character") or "Shivani",
+        "is_explicit_language": state.get("is_explicit_language", False),
         "detected_script_language": detected_lang,
     }
     if stt_service.last_latency_ms is not None:
@@ -146,6 +148,10 @@ async def node_clarify(state: ConsumerDostState) -> dict:
         target_field = missing[0]
 
     lang = state.get("preferred_language", "hi-IN")
+    detected = state.get("detected_script_language")
+    if detected == "en-IN" and not state.get("is_explicit_language"):
+        lang = "en-IN"
+
     voice_char = state.get("preferred_voice_character") or "Shivani"
     composed = await ResponseComposer.compose_clarification(
         known_facts=dict(state),

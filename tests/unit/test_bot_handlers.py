@@ -184,4 +184,63 @@ def test_voice_character_keyboard_gender_indicators():
     assert "voice:Chetana" in callbacks
 
 
+def test_is_conversational_greeting_or_help():
+    from saarthi.telegram.bot import is_conversational_greeting_or_help
+
+    assert is_conversational_greeting_or_help("Hello what ca you do")
+    assert is_conversational_greeting_or_help("what can you do")
+    assert is_conversational_greeting_or_help("hello")
+    assert is_conversational_greeting_or_help("hi")
+    assert is_conversational_greeting_or_help("Namaste")
+    assert is_conversational_greeting_or_help("kya kar sakte ho")
+    assert is_conversational_greeting_or_help("who are you")
+
+    # Real complaints must NOT be treated as conversational greetings
+    assert not is_conversational_greeting_or_help("I ordered a phone on Flipkart for 14999")
+    assert not is_conversational_greeting_or_help("Airline cancelled my ticket and denied refund")
+
+
+@pytest.mark.asyncio
+async def test_handle_conversational_inquiry_with_male_voice_in_english():
+    from saarthi.telegram.bot import handle_conversational_inquiry
+    from unittest.mock import patch
+    from saarthi.speech.gnani_tts import tts_service
+
+    mock_bot = MagicMock()
+    mock_bot.send_chat_action = AsyncMock()
+    mock_bot.send_voice = AsyncMock()
+
+    mock_msg = MagicMock()
+    mock_msg.chat.id = 12345
+    mock_msg.from_user.id = 67890
+    mock_msg.text = "Hello what ca you do"
+    mock_msg.answer = AsyncMock()
+
+    state = {
+        "telegram_user_id": "67890",
+        "chat_id": "12345",
+        "preferred_language": "hi-IN",
+        "preferred_voice_character": "Devansh",
+        "raw_input_text": "Hello what ca you do",
+    }
+
+    with patch.object(tts_service, "synthesize_speech", wraps=tts_service.synthesize_speech) as mock_synth:
+        await handle_conversational_inquiry(mock_bot, mock_msg, state)
+
+        # Must respond with friendly capability explanation, NOT demand legal name
+        mock_msg.answer.assert_awaited_once()
+        reply_text = mock_msg.answer.call_args[0][0]
+        assert "SAARTHI" in reply_text
+        assert "Consumer Protection Act" in reply_text
+        assert "Legal Demand Notice" in reply_text
+        assert "पूरा कानूनी नाम" not in reply_text
+        assert "Full Legal Name" not in reply_text
+
+        # Must synthesize in Devansh's voice
+        assert mock_synth.called
+        assert mock_synth.call_args[1].get("voice") == "Devansh"
+        assert mock_synth.call_args[1].get("language") == "en-IN"
+
+
+
 

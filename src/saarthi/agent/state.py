@@ -7,6 +7,8 @@ class SaarthiState(TypedDict, total=False):
     chat_id: str
     thread_id: str
     preferred_language: str  # 'hi-IN', 'hinglish', or 'en-IN'
+    preferred_voice_character: str | None
+    is_explicit_language: bool | None
     raw_input_text: str | None
     voice_file_id: str | None
     voice_bytes: bytes | None

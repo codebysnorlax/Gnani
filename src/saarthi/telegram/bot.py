@@ -1,4 +1,5 @@
 import io
+import re
 import logging
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict
@@ -21,6 +22,7 @@ from saarthi.database.repository import DisputeRepository
 from saarthi.agent.state import ConsumerDostState
 from saarthi.agent.graph import get_compiled_graph, run_atomic_generation
 from saarthi.speech.gnani_tts import tts_service, SUPPORTED_INDIC_LANGUAGES
+from saarthi.speech.gnani_stt import detect_indic_script_language
 from saarthi.agent.voice_prompts import VoicePromptComposer, get_voice_gender
 from saarthi.telegram.keyboards import (
     get_welcome_keyboard,
@@ -140,7 +142,7 @@ async def get_or_create_user_state(user_id: str, chat_id: str) -> ConsumerDostSt
             await repo.save_session_state(user_id, state)
         else:
             state.setdefault("preferred_language", saved_lang)
-            state.setdefault("preferred_voice_character", saved_voice)
+            state["preferred_voice_character"] = saved_voice
         user_sessions[user_id] = state
         return state
 
@@ -189,7 +191,9 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         chat_id = str(message.chat.id)
         async with AsyncSessionLocal() as session:
             repo = DisputeRepository(session)
-            await repo.get_or_create_user(user_id, chat_id)
+            user_record = await repo.get_or_create_user(user_id, chat_id)
+            saved_lang = user_record.preferred_language or "hi-IN"
+            saved_voice = getattr(user_record, "preferred_voice_character", "Shivani") or "Shivani"
             existing_state = await repo.load_session_state(user_id)
 
         # Check for unfinalized active dispute to offer session recovery
@@ -216,7 +220,8 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             "telegram_user_id": user_id,
             "chat_id": chat_id,
             "thread_id": f"thread_{user_id}",
-            "preferred_language": "hi-IN",
+            "preferred_language": saved_lang,
+            "preferred_voice_character": saved_voice,
             "status": "DRAFT",
         }
         await save_user_state(user_id, fresh_state)
@@ -225,8 +230,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
 
         # 1. Voice-first greeting
-        voice = saved_voice if incomplete_case else "Shivani"
-        welcome_voice = await get_or_create_welcome_voice("hi-IN", voice=voice)
+        welcome_voice = await get_or_create_welcome_voice(saved_lang, voice=saved_voice)
         await send_voice_with_fallback(
             bot=bot,
             chat_id=chat_id,
@@ -625,10 +629,128 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     return bot, dp
 
 
+def is_conversational_greeting_or_help(text: str) -> bool:
+    """Detect if user input is an introductory greeting, capability query, or chit-chat."""
+    if not text:
+        return False
+    clean = re.sub(r"[^\w\s]", "", text).strip().lower()
+    common_phrases = {
+        "hello", "hi", "hey", "hii", "heyy", "namaste", "namaskar",
+        "good morning", "good evening", "good afternoon",
+        "who are you", "who r u", "what is this", "what is saarthi",
+        "help", "help me", "how to use", "how does this work",
+        "kaise ho", "how are you", "kya haal hai", "kya haal",
+    }
+    if clean in common_phrases:
+        return True
+
+    inquiry_patterns = [
+        r"\b(what|wat)\s+(can|ca|do)\s+you\s+do\b",
+        r"\bwhat\s+(are\s+your\s+)?capabilities\b",
+        r"\bhow\s+can\s+you\s+help(\s+me)?\b",
+        r"\bwho\s+are\s+you\b",
+        r"\bwhat\s+is\s+saarthi\b",
+        r"\bkya\s+(kuch\s+)?kar\s+sakte\s+ho\b",
+        r"\baap\s+kya\s+karte\s+ho\b",
+        r"\btum\s+kya\s+karte\s+ho\b",
+        r"\baap\s+kaun\s+ho\b",
+        r"\btum\s+kaun\s+ho\b",
+        r"\bmadad\s+kaise\s+(karein|karoge)\b",
+    ]
+    for pattern in inquiry_patterns:
+        if re.search(pattern, clean):
+            return True
+
+    return False
+
+
+async def handle_conversational_inquiry(bot: Bot, message: Message, state: ConsumerDostState) -> None:
+    """Respond dynamically to greetings and capability questions in chosen voice and user's language."""
+    chat_id = str(message.chat.id)
+    raw_text = state.get("raw_input_text") or getattr(message, "text", None) or ""
+    voice_char = state.get("preferred_voice_character") or "Shivani"
+    gender = get_voice_gender(voice_char)
+
+    detected = detect_indic_script_language(raw_text)
+    is_english = (detected == "en-IN") or bool(re.search(r"^[a-zA-Z0-9\s\.,\?!'-]+$", raw_text))
+
+    if is_english:
+        lang = "en-IN"
+        visible_text = (
+            "<b>Hello! I am SAARTHI (pronounced saar-thee)</b>\n"
+            "<i>Your Voice-First AI Consumer Rights & Dispute Guide</i>\n\n"
+            "I help consumers resolve unfair disputes with e-commerce platforms, airlines, banks, and service providers.\n\n"
+            "<b>Here is how I can assist you:</b>\n"
+            "• <b>Legal Claim Calculation:</b> Quantify refund amounts, statutory interest (6-18% p.a.), and legal damages under the Consumer Protection Act, 2019.\n"
+            "• <b>Formal Legal Demand Notice (PDF):</b> Draft a lawyer-grade notice addressed to the company's Nodal Grievance Officer.\n"
+            "• <b>National Consumer Helpline (NCH 1915):</b> Provide structured filing details ready for WhatsApp filing.\n"
+            "• <b>Public Social Escalation:</b> Create a factual escalation draft for X (Twitter).\n"
+            "• <b>Voice Guidance:</b> Provide clear spoken voice walkthroughs in your chosen voice.\n\n"
+            "<b>To begin:</b> Tell me which company or brand you have an issue with, and what happened!"
+        )
+        spoken_text = (
+            f"Hello! I am {voice_char} from SAARTHI, your consumer dispute assistant. <pauses> "
+            "I convert consumer grievances into formal legal demand notices and helpline filings under the Consumer Protection Act. "
+            "<slow> Please tell me which company or brand you have an issue with, and what happened."
+        )
+    else:
+        lang = state.get("preferred_language") or "hi-IN"
+        verb_help = "मदद करूँगी" if gender == "female" else "मदद करूंगा"
+        verb_prepare = "तैयार करूँगी" if gender == "female" else "तैयार करूंगा"
+        visible_text = (
+            f"<b>नमस्ते! मैं सारथी (SAARTHI) हूँ</b>\n"
+            f"<i>आपका उपभोक्ता अधिकार और कानूनी शिकायत सहायक</i>\n\n"
+            f"अगर किसी कंपनी (जैसे Flipkart, Amazon, एयरलाइंस या बैंक) ने आपका रिफंड अटकाया है या सेवा में कमी की है, तो मैं आपकी पूरी {verb_help}।\n\n"
+            f"<b>मैं आपके लिए क्या कर सकता हूँ:</b>\n"
+            f"• <b>कानूनी दावे की गणना:</b> उपभोक्ता संरक्षण कानून के तहत ब्याज और हर्जाने की सटीक गणना।\n"
+            f"• <b>लीगल नोटिस (PDF):</b> कंपनी के नोडल अधिकारी के लिए औपचारिक कानूनी मांग पत्र।\n"
+            f"• <b>राष्ट्रीय उपभोक्ता हेल्पलाइन (NCH 1915):</b> व्हाट्सएप पर शिकायत दर्ज करने के लिए ड्राफ्ट टेक्स्ट।\n"
+            f"• <b>सोशल मीडिया ड्राफ्ट:</b> X (Twitter) पर पोस्ट के लिए ड्राफ्ट।\n"
+            f"• <b>ऑडियो मार्गदर्शन:</b> आपकी चुनी हुई आवाज़ ({voice_char}) में वॉइस गाइड।\n\n"
+            f"<b>शुरुआत करने के लिए:</b> बस एक वॉइस नोट भेजें या लिखकर बताएं कि किस कंपनी या ब्रांड के साथ क्या समस्या हुई है।"
+        )
+        spoken_text = (
+            f"Namaste! Main {voice_char} hoon, SAARTHI se. <pauses> "
+            f"Consumer dispute sunkar main turant legal notice aur helpline filing {verb_prepare}. "
+            f"<slow> Kripya batayein kis company ya brand ke saath kya samasya hui thi."
+        )
+
+    await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
+    cache_path = settings.data_dir / "cache" / f"help_intro_{lang}_{voice_char}.wav"
+    audio_path = await tts_service.synthesize_speech(
+        text=spoken_text,
+        output_path=cache_path,
+        language=lang,
+        voice=voice_char,
+        model="timbre-v3.0",
+    )
+
+    if audio_path and audio_path.exists():
+        await send_voice_with_fallback(
+            bot=bot,
+            chat_id=chat_id,
+            audio_path=audio_path,
+            caption=f"<b>SAARTHI Overview:</b> Spoken by {voice_char}",
+        )
+
+    await message.answer(visible_text)
+    state["status"] = "DRAFT"
+    user_id = state.get("telegram_user_id") or (str(message.from_user.id) if getattr(message, "from_user", None) else "")
+    if user_id:
+        await save_user_state(user_id, state)
+
+
 async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostState) -> None:
     """Run LangGraph pipeline turn and reply with voice-first clarification or assessment card."""
     chat_id = str(message.chat.id)
     await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+    # Check for friendly greetings or capability inquiries before entering legal intake
+    raw_text = state.get("raw_input_text") or getattr(message, "text", None) or ""
+    if not state.get("brand_raw") and not state.get("amount_paid_inr"):
+        if is_conversational_greeting_or_help(raw_text):
+            await handle_conversational_inquiry(bot, message, state)
+            return
 
     had_voice = bool(state.get("voice_bytes"))
 

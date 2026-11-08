@@ -142,13 +142,17 @@ class ResponseComposer:
             ack_text = " ".join(ack_parts)
             spoken_ack = " ".join(spoken_ack_parts)
 
-            visible = (
-                f"{ack_text + '<br><br>' if ack_text else ''}"
-                f"<b>Required Detail:</b> Please provide your <b>{display_name}</b> {reason}."
-            )
-            spoken = (
-                f"{spoken_ack} <pauses> " if spoken_ack else ""
-            ) + f"Please provide your {display_name} {reason}."
+            if ack_text:
+                visible = (
+                    f"{ack_text}<br><br>"
+                    f"To finalize your statutory claim notice, please provide your <b>{display_name}</b> ({reason})."
+                )
+                spoken = f"{spoken_ack} <pauses> Please provide your {display_name} {reason}."
+            else:
+                visible = (
+                    f"To assist with your consumer dispute filing, please provide your <b>{display_name}</b> ({reason})."
+                )
+                spoken = f"Please provide your {display_name} {reason}."
         else:
             if brand and amount:
                 amt_str = format_inr(float(amount))
@@ -165,13 +169,17 @@ class ResponseComposer:
             ack_text = " ".join(ack_parts)
             spoken_ack = " ".join(spoken_ack_parts)
 
-            visible = (
-                f"{ack_text + '<br><br>' if ack_text else ''}"
-                f"<b>आवश्यक जानकारी:</b> {reason}, कृपया अपना <b>{display_name}</b> बताएं।"
-            )
-            spoken = (
-                f"{spoken_ack} <pauses> " if spoken_ack else ""
-            ) + f"{reason}, kripya apna {display_name} batayein."
+            if ack_text:
+                visible = (
+                    f"{ack_text}<br><br>"
+                    f"कानूनी नोटिस तैयार करने के लिए, {reason}, कृपया अपना <b>{display_name}</b> बताएं।"
+                )
+                spoken = f"{spoken_ack} <pauses> {reason}, kripya apna {display_name} batayein."
+            else:
+                visible = (
+                    f"आपकी कानूनी शिकायत को आगे बढ़ाने के लिए, {reason}, कृपया अपना <b>{display_name}</b> बताएं।"
+                )
+                spoken = f"{reason}, kripya apna {display_name} batayein."
 
         spoken_clean = sanitize_speech_tags(spoken)
         return ComposedResponse(
