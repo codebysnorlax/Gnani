@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from consumerdost.telegram.keyboards import get_language_keyboard, get_welcome_keyboard
-from consumerdost.telegram.bot import get_or_create_welcome_voice, user_sessions, get_user_state
-from consumerdost.speech.gnani_tts import SUPPORTED_INDIC_LANGUAGES
+from saarthi.telegram.keyboards import get_language_keyboard, get_welcome_keyboard
+from saarthi.telegram.bot import get_or_create_welcome_voice, user_sessions, get_user_state
+from saarthi.speech.gnani_tts import SUPPORTED_INDIC_LANGUAGES
 
 
 def test_language_keyboard_all_10_languages():
@@ -43,3 +43,19 @@ def test_user_session_language_update():
     # Simulate language update
     state["preferred_language"] = "ta-IN"
     assert get_user_state(user_id, chat_id)["preferred_language"] == "ta-IN"
+
+
+@pytest.mark.asyncio
+async def test_node_ingest_preserves_explicit_language_preference():
+    from saarthi.agent.nodes import node_ingest
+
+    # User explicitly selected Hindi
+    state = {
+        "raw_input_text": "I ordered a phone from Flipkart on 25th October and it arrived damaged.",
+        "preferred_language": "hi-IN",
+    }
+    result = await node_ingest(state)
+
+    # Must preserve hi-IN and not overwrite with en-IN
+    assert result["preferred_language"] == "hi-IN"
+    assert result["detected_script_language"] == "en-IN"

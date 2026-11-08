@@ -3,13 +3,13 @@ from pathlib import Path
 import pytest
 from pypdf import PdfReader
 
-from consumerdost.config import settings
-from consumerdost.database.engine import AsyncSessionLocal, init_db
-from consumerdost.database.repository import DisputeRepository
-from consumerdost.documents.pdf_generator import register_fonts
-from consumerdost.agent.graph import get_compiled_graph
-from consumerdost.agent.state import ConsumerDostState
-from consumerdost.agent.nodes import node_bundle, node_tts
+from saarthi.config import settings
+from saarthi.database.engine import AsyncSessionLocal, init_db
+from saarthi.database.repository import DisputeRepository
+from saarthi.documents.pdf_generator import register_fonts
+from saarthi.agent.graph import get_compiled_graph
+from saarthi.agent.state import ConsumerDostState
+from saarthi.agent.nodes import node_bundle, node_tts
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 import pytest
-from consumerdost.database.engine import AsyncSessionLocal, init_db
-from consumerdost.database.repository import DisputeRepository
+from saarthi.database.engine import AsyncSessionLocal, init_db
+from saarthi.database.repository import DisputeRepository
 
 
 @pytest.mark.asyncio
@@ -12,14 +12,17 @@ async def test_repository_user_and_case_lifecycle():
         # 1. Create User
         user = await repo.get_or_create_user("test_user_999", "chat_999", "en-IN")
         assert user.telegram_user_id == "test_user_999"
+        assert user.preferred_voice_character == "Shivani"
 
-        # 2. Update Profile
+        # 2. Update Profile with voice character
         updated = await repo.update_user_profile(
             "test_user_999",
             legal_full_name="Vikram Seth",
             contact_detail="vikram@example.com",
+            preferred_voice_character="Devansh",
         )
         assert updated.legal_full_name == "Vikram Seth"
+        assert updated.preferred_voice_character == "Devansh"
 
         # 3. Create Case
         case = await repo.create_dispute_case(
@@ -42,8 +45,19 @@ async def test_repository_user_and_case_lifecycle():
             narrative_facts_en="Defective item delivered.",
             legal_clauses=["Section 2(10)", "Section 2(47)"],
         )
-        assert case.id.startswith("CD-")
+        assert case.id.startswith("SRTH-")
         assert case.order_id == "OD9988776655"
+
+        # Verify get_case_by_id with both SRTH- and legacy CD- prefix
+        fetched_direct = await repo.get_case_by_id(case.id)
+        assert fetched_direct is not None
+        assert fetched_direct.id == case.id
+
+        legacy_alias = "CD-" + case.id[5:]
+        fetched_legacy = await repo.get_case_by_id(legacy_alias)
+        assert fetched_legacy is not None
+        assert fetched_legacy.id == case.id
+
 
         # 4. Add Artifact
         art = await repo.add_artifact(

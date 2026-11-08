@@ -3,10 +3,10 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "consumerdost"
+name = "saarthi"
 version = "0.1.0"
 description = "AI-Powered Voice Consumer Rights & Pre-Litigation Dispute Engine"
-readme = "PRD.md"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "gnani-vachana>=0.9.0",
@@ -23,7 +23,12 @@ dependencies = [
     "httpx>=0.27.0",
     "google-genai>=0.1.0",
     "groq>=0.9.0",
+    "loguru>=0.7.0",
 ]
+
+[project.scripts]
+saarthi = "saarthi.main:main"
+consumerdost = "saarthi.main:main"
 
 [project.optional-dependencies]
 dev = [
@@ -39,4 +44,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]

@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from consumerdost.domain.calculator import calculate_claim, format_inr
+from saarthi.domain.calculator import calculate_claim, format_inr
 
 
 def test_standard_claim_calculation():
@@ -47,3 +47,32 @@ def test_inr_formatting():
     assert format_inr(14999.00) == "₹14,999.00"
     assert format_inr(20032.28) == "₹20,032.28"
     assert format_inr(100000.50) == "₹1,00,000.50"
+
+
+import pytest
+
+@pytest.mark.asyncio
+async def test_calculation_and_statutes_isolated_from_llm():
+    from saarthi.agent.nodes import node_resolve
+    from saarthi.domain.statutes import get_statute_entry
+    from saarthi.agent.state import ConsumerDostState
+
+    state: ConsumerDostState = {
+        "amount_paid_inr": 10000.0,
+        "incident_date": "2026-10-20",
+        "issue_type": "ECOMMERCE_DEFECTIVE_GOODS",
+        "brand_raw": "Flipkart",
+        "dispute_narrative_en": "Defective item",
+        "preferred_language": "en-IN",
+    }
+    res = await node_resolve(state)
+
+    statute = get_statute_entry("ECOMMERCE_DEFECTIVE_GOODS")
+    expected_clauses = statute.cpa_sections + statute.sectoral_rules
+
+    # Deterministic calculation and legal clauses check
+    assert res["principal_paise"] == 1000000
+    assert res["legal_clauses"] == expected_clauses
+    assert res["total_claim_paise"] > 1000000
+    assert any("Section" in c for c in res["legal_clauses"])
+

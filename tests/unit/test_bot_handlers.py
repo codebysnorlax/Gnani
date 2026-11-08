@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiogram.types import User as TelegramUser, Chat, Message
 
-from consumerdost.database.engine import init_db
-from consumerdost.telegram.bot import (
+from saarthi.database.engine import init_db
+from saarthi.telegram.bot import (
     create_bot_and_dispatcher,
     get_user_state,
     get_or_create_user_state,
@@ -95,4 +95,56 @@ async def test_session_recovery_detection():
 
     # Clean up
     await clear_user_state("99")
+
+
+@pytest.mark.asyncio
+async def test_dynamic_multi_turn_clarification_no_repeats():
+    from saarthi.agent.response_composer import ResponseComposer
+
+    # Turn 1: Brand and Amount known; missing full_name
+    facts_turn1 = {"brand": "Flipkart", "amount": 14999.0}
+    res1 = await ResponseComposer.compose_clarification(
+        known_facts=facts_turn1,
+        target_field="full_name",
+        language="en-IN",
+        latest_user_text="I bought a phone on Flipkart for 14999 and the screen was broken.",
+    )
+    assert res1.target_field == "full_name"
+    assert "Flipkart" in res1.visible_text or "Flipkart" in res1.spoken_text
+    assert "Name" in res1.visible_text
+    assert not res1.spoken_text.startswith("<")  # No leading audio tag
+    # Ensure no emoji
+    assert not any(0x1F300 <= ord(c) <= 0x1FAFF for c in res1.visible_text)
+
+    # Turn 2: User provides full name; target is now order_id
+    facts_turn2 = {"brand": "Flipkart", "amount": 14999.0, "full_name": "Rohan Sharma"}
+    res2 = await ResponseComposer.compose_clarification(
+        known_facts=facts_turn2,
+        target_field="order_id",
+        language="en-IN",
+        latest_user_text="My name is Rohan Sharma.",
+    )
+    assert res2.target_field == "order_id"
+    assert "Order" in res2.visible_text
+    # Does not ask for full name again
+    assert "please provide your full legal name" not in res2.visible_text.lower()
+
+    # Turn 3: User provides order ID; target is now incident_date
+    facts_turn3 = {
+        "brand": "Flipkart",
+        "amount": 14999.0,
+        "full_name": "Rohan Sharma",
+        "order_id": "OD9988776655",
+    }
+    res3 = await ResponseComposer.compose_clarification(
+        known_facts=facts_turn3,
+        target_field="incident_date",
+        language="en-IN",
+        latest_user_text="My order ID was OD9988776655.",
+    )
+    assert res3.target_field == "incident_date"
+    assert "date" in res3.visible_text.lower()
+    # Does not ask for order ID or full name again
+    assert "order id or reference number" not in res3.visible_text.lower()
+
 

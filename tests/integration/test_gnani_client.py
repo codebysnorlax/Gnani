@@ -4,13 +4,13 @@ from pathlib import Path
 import respx
 import httpx
 
-from consumerdost.speech.gnani_stt import GnaniSTTService, GOLDEN_DEMO_TRANSCRIPT
-from consumerdost.speech.gnani_tts import GnaniTTSService
+from saarthi.speech.gnani_stt import GnaniSTTService
+from saarthi.speech.gnani_tts import GnaniTTSService
 
 
 @pytest.mark.asyncio
-async def test_gnani_stt_demo_fallback_when_api_fails():
-    # Use invalid key to trigger fallback
+async def test_gnani_stt_honest_failure_when_api_fails():
+    # Use invalid key to trigger failure
     service = GnaniSTTService(api_key="invalid_test_key", timeout=1)
     transcript, is_fallback = await service.transcribe_audio(
         audio_source=b"fake_pcm_data_here",
@@ -19,11 +19,11 @@ async def test_gnani_stt_demo_fallback_when_api_fails():
     )
 
     assert is_fallback is True
-    assert transcript == GOLDEN_DEMO_TRANSCRIPT
+    assert transcript == ""
 
 
 @pytest.mark.asyncio
-async def test_gnani_tts_demo_fallback():
+async def test_gnani_tts_honest_failure_when_api_fails():
     with tempfile.TemporaryDirectory() as tmpdir:
         out_file = Path(tmpdir) / "action_summary.wav"
         service = GnaniTTSService(api_key="invalid_test_key", timeout=1)
@@ -33,6 +33,6 @@ async def test_gnani_tts_demo_fallback():
             language="hi-IN",
         )
 
-        assert result_path is not None
-        assert result_path.exists()
-        assert result_path.stat().st_size > 0
+        # Honest failure: does not write silent placeholder WAV; returns None
+        assert result_path is None
+        assert not out_file.exists()

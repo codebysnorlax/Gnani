@@ -1,6 +1,6 @@
 import pytest
-from consumerdost.agent.graph import get_compiled_graph
-from consumerdost.agent.state import ConsumerDostState
+from saarthi.agent.graph import get_compiled_graph
+from saarthi.agent.state import ConsumerDostState
 
 
 @pytest.mark.asyncio
@@ -21,6 +21,22 @@ async def test_agent_graph_missing_field_clarification():
     assert result.get("status") == "AWAITING_CLARIFICATION"
     assert result.get("clarification_prompt") is not None
     assert len(result.get("missing_fields", [])) > 0
+    assert result.get("pdf_file_path") is None
+    assert result.get("nch_dossier_text") is None
+    assert result.get("twitter_draft_text") is None
+
+
+@pytest.mark.asyncio
+async def test_agent_graph_incomplete_case_rejects_bundle():
+    from saarthi.agent.nodes import node_bundle
+    incomplete_state: ConsumerDostState = {
+        "status": "AWAITING_CLARIFICATION",
+        "missing_fields": ["order_id", "full_name"],
+        "amount_paid_inr": 14999.0,
+    }
+    with pytest.raises(ValueError, match="Cannot generate document bundle"):
+        await node_bundle(incomplete_state)
+
 
 
 @pytest.mark.asyncio
@@ -53,7 +69,7 @@ async def test_agent_graph_full_resolution():
 @pytest.mark.asyncio
 async def test_agent_graph_bundle_and_tts():
     # Test bundle execution node
-    from consumerdost.agent.nodes import node_bundle, node_tts
+    from saarthi.agent.nodes import node_bundle, node_tts
     state: ConsumerDostState = {
         "case_reference_id": "CD-2026-TEST",
         "amount_paid_inr": 14999.00,

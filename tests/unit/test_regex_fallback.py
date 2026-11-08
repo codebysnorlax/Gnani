@@ -1,4 +1,4 @@
-from consumerdost.agent.regex_fallback import extract_entities_regex
+from saarthi.agent.regex_fallback import extract_entities_regex
 
 
 def test_regex_extraction_flipkart_hindi():

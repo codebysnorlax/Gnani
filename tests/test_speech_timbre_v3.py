@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from consumerdost.speech.gnani_tts import (
+from saarthi.speech.gnani_tts import (
     GnaniTTSService,
     SUPPORTED_INDIC_LANGUAGES,
     VOICE_PERSONAS,
@@ -54,7 +54,7 @@ async def test_synthesize_speech_with_audio_tags(tmp_path: Path):
     service = GnaniTTSService(api_key="test_key")
     service._client = mock_client
 
-    sample_text = "Namaste! <excited> ConsumerDost is here. <pauses> How can I help?"
+    sample_text = "Namaste! SAARTHI is here. <pauses> <slow> How can I help?"
     result = await service.synthesize_speech(
         text=sample_text,
         output_path=output_wav,
@@ -70,24 +70,23 @@ async def test_synthesize_speech_with_audio_tags(tmp_path: Path):
     assert call_args["voice"] == "Shivani"
     assert call_args["model"] == "timbre-v3.0"
     assert call_args["language"] == "kn-IN"
-    assert "<excited>" in call_args["text"]
     assert "<pauses>" in call_args["text"]
+    assert "<slow>" in call_args["text"]
 
 
 @pytest.mark.asyncio
-async def test_synthesize_speech_fallback_demo(tmp_path: Path):
-    # Without client / API key, should write valid RIFF header in demo mode
+async def test_synthesize_speech_honest_failure_no_key(tmp_path: Path):
+    # Without client / API key, should return None instead of writing silent placeholder WAV
     output_wav = tmp_path / "fallback.wav"
-    service = GnaniTTSService(api_key=None)
+    service = GnaniTTSService(api_key="")
 
     result = await service.synthesize_speech(
         text="Hello test",
         output_path=output_wav,
         language="hi-IN",
     )
-    assert result == output_wav
-    assert output_wav.exists()
-    assert output_wav.read_bytes().startswith(b"RIFF")
+    assert result is None
+    assert not output_wav.exists()
 
 
 @pytest.mark.asyncio
@@ -124,7 +123,7 @@ async def test_tts_retry_on_failure(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_stt_retry_on_failure():
-    from consumerdost.speech.gnani_stt import GnaniSTTService
+    from saarthi.speech.gnani_stt import GnaniSTTService
     from gnani.stt.exceptions import GnaniSTTError
 
     mock_client = MagicMock()

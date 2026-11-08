@@ -1,4 +1,4 @@
-from consumerdost.domain.statutes import STATUTE_REGISTRY, get_statute_entry
+from saarthi.domain.statutes import STATUTE_REGISTRY, get_statute_entry
 
 
 def test_ecommerce_defective_goods_mapping():

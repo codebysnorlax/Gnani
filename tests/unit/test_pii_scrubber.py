@@ -1,5 +1,5 @@
 import pytest
-from consumerdost.security.pii_scrubber import scrub_sensitive_pii
+from saarthi.security.pii_scrubber import scrub_sensitive_pii
 
 
 def test_scrub_card_number():

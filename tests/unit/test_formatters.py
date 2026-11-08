@@ -1,6 +1,6 @@
-from consumerdost.documents.nch_formatter import format_nch_dossier
-from consumerdost.documents.social_formatter import format_twitter_escalation
-from consumerdost.domain.calculator import calculate_claim
+from saarthi.documents.nch_formatter import format_nch_dossier
+from saarthi.documents.social_formatter import format_twitter_escalation
+from saarthi.domain.calculator import calculate_claim
 from datetime import date
 
 
@@ -53,7 +53,7 @@ def test_twitter_formatter_long_snippet_truncation():
 
 
 def test_multilingual_disclaimers_cover_all_10_languages():
-    from consumerdost.telegram.formatters import MULTILINGUAL_DISCLAIMERS, get_legal_disclaimer
+    from saarthi.telegram.formatters import MULTILINGUAL_DISCLAIMERS, get_legal_disclaimer
     languages = ["hi-IN", "en-IN", "kn-IN", "ta-IN", "te-IN", "mr-IN", "bn-IN", "gu-IN", "ml-IN", "pa-IN"]
     for lang in languages:
         assert lang in MULTILINGUAL_DISCLAIMERS
@@ -62,7 +62,7 @@ def test_multilingual_disclaimers_cover_all_10_languages():
 
 
 def test_assessment_card_branding_and_disclaimer():
-    from consumerdost.telegram.formatters import format_assessment_card, format_next_steps_card
+    from saarthi.telegram.formatters import format_assessment_card, format_next_steps_card
     state = {
         "preferred_language": "hi-IN",
         "brand_raw": "Flipkart",
@@ -73,9 +73,30 @@ def test_assessment_card_branding_and_disclaimer():
     }
     card = format_assessment_card(state)
     assert "Illustrative Pre-Litigation Demand Estimate" in card
-    assert "Powered by Gnani Prisma v3.0 + Timbre v3.0 (STT: 150ms, TTS: 280ms)" in card
     assert "Disclaimer:" in card
 
     steps = format_next_steps_card(state)
-    assert "What to Do Next" in steps
-    assert "Powered by Gnani Prisma v3.0 + Timbre v3.0" in steps
+    assert "Next Steps" in steps
+    assert "Disclaimer:" in steps
+
+
+def test_html_injection_escaping():
+    from saarthi.telegram.formatters import format_assessment_card, format_cover_email
+    malicious_state = {
+        "case_reference_id": "SRTH-2026-XSS",
+        "complainant_full_name": "<script>alert('pwned')</script>",
+        "complainant_contact": "hacker@test.com<img src=x onerror=alert(1)>",
+        "brand_raw": "Evil<Vendor>&Co",
+        "order_id": "OD<123>&",
+        "preferred_language": "en-IN",
+    }
+    card = format_assessment_card(malicious_state)
+    assert "<script>" not in card
+    assert "&lt;script&gt;alert(&#x27;pwned&#x27;)&lt;/script&gt;" in card or "&lt;script&gt;" in card
+    assert "<img src=x" not in card
+    assert "&lt;Vendor&gt;&amp;Co" in card
+
+    email = format_cover_email(malicious_state)
+    assert "<script>" not in email
+    assert "&lt;script&gt;" in email
+

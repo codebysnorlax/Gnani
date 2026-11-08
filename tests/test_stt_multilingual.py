@@ -1,9 +1,8 @@
 import pytest
 from unittest.mock import MagicMock
-from consumerdost.speech.gnani_stt import (
+from saarthi.speech.gnani_stt import (
     GnaniSTTService,
     detect_indic_script_language,
-    GOLDEN_DEMO_TRANSCRIPTS,
 )
 
 
@@ -42,19 +41,19 @@ async def test_transcribe_audio_multilingual_client():
 
 
 @pytest.mark.asyncio
-async def test_transcribe_audio_demo_fallback():
-    service = GnaniSTTService(api_key=None)
+async def test_transcribe_audio_honest_failure_when_no_key():
+    service = GnaniSTTService(api_key="")
 
     transcript_kn, is_fallback = await service.transcribe_audio(
         audio_source=b"dummy",
         language_code="kannada",
     )
     assert is_fallback is True
-    assert transcript_kn == GOLDEN_DEMO_TRANSCRIPTS["kn-IN"]
+    assert transcript_kn == ""
 
     transcript_ta, is_fallback = await service.transcribe_audio(
         audio_source=b"dummy",
         language_code="tamil",
     )
     assert is_fallback is True
-    assert transcript_ta == GOLDEN_DEMO_TRANSCRIPTS["ta-IN"]
+    assert transcript_ta == ""

@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
-from consumerdost.agent.nodes import node_clarify, node_resolve, node_ingest
-from consumerdost.agent.state import ConsumerDostState
+from saarthi.agent.nodes import node_clarify, node_resolve, node_ingest
+from saarthi.agent.state import ConsumerDostState
 
 
 @pytest.mark.asyncio
@@ -70,4 +70,5 @@ async def test_node_ingest_auto_detects_kannada():
         "preferred_language": "hi-IN",
     }
     result = await node_ingest(state)
-    assert result["preferred_language"] == "kn-IN"
+    assert result["preferred_language"] == "hi-IN"
+    assert result["detected_script_language"] == "kn-IN"

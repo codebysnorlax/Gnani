@@ -1,7 +1,7 @@
 import asyncio
-from consumerdost.config import settings
-from consumerdost.database.engine import AsyncSessionLocal, init_db
-from consumerdost.database.repository import DisputeRepository
+from saarthi.config import settings
+from saarthi.database.engine import AsyncSessionLocal, init_db
+from saarthi.database.repository import DisputeRepository
 
 
 async def main():

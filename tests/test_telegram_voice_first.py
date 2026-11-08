@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.enums import ChatAction
 from aiogram.types import Message, Chat, User
 
-from consumerdost.telegram.bot import (
+from saarthi.telegram.bot import (
     send_voice_with_fallback,
     process_workflow_turn,
 )
-from consumerdost.agent.state import ConsumerDostState
+from saarthi.agent.state import ConsumerDostState
 
 
 @pytest.mark.asyncio
@@ -64,7 +64,7 @@ async def test_process_workflow_turn_sends_voice_note(tmp_path: Path):
         "clarification_audio_path": str(clarify_audio),
     }
 
-    with patch("consumerdost.telegram.bot.get_compiled_graph") as mock_get_graph:
+    with patch("saarthi.telegram.bot.get_compiled_graph") as mock_get_graph:
         mock_graph = AsyncMock()
         mock_graph.ainvoke.return_value = state
         mock_get_graph.return_value = mock_graph
@@ -76,3 +76,42 @@ async def test_process_workflow_turn_sends_voice_note(tmp_path: Path):
         mock_bot.send_chat_action.assert_any_call(chat_id="9999", action=ChatAction.RECORD_VOICE)
         mock_bot.send_voice.assert_called_once()
         mock_message.answer.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_assessment_card_attaches_review_and_generate_button(tmp_path: Path):
+    from saarthi.telegram.keyboards import get_confirmation_keyboard
+
+    mock_bot = AsyncMock()
+    mock_message = MagicMock(spec=Message)
+    mock_chat = MagicMock(spec=Chat)
+    mock_chat.id = 8888
+    mock_message.chat = mock_chat
+    mock_message.answer = AsyncMock()
+
+    state: ConsumerDostState = {
+        "telegram_user_id": "test_assessment_user",
+        "chat_id": "8888",
+        "thread_id": "thread_8888",
+        "status": "AWAITING_CONFIRMATION",
+        "brand_raw": "Flipkart",
+        "total_claim_paise": 1500000,
+        "principal_paise": 1500000,
+        "assessment_audio_path": None,
+    }
+
+    with patch("saarthi.telegram.bot.get_compiled_graph") as mock_get_graph:
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.return_value = state
+        mock_get_graph.return_value = mock_graph
+
+        await process_workflow_turn(mock_bot, mock_message, state)
+
+        # Message answer should be called with confirmation keyboard
+        mock_message.answer.assert_called_once()
+        call_kwargs = mock_message.answer.call_args[1]
+        reply_markup = call_kwargs.get("reply_markup")
+        assert reply_markup is not None
+        btn = reply_markup.inline_keyboard[0][0]
+        assert btn.text == "Review and generate documents"
+        assert btn.callback_data == "action:generate_bundle"

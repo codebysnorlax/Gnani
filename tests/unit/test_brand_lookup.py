@@ -1,4 +1,4 @@
-from consumerdost.domain.brands import resolve_brand
+from saarthi.domain.brands import resolve_brand
 
 
 def test_exact_brand_match():
@@ -41,7 +41,7 @@ def test_unknown_brand_fallback():
 
 
 def test_create_fallback_brand_default():
-    from consumerdost.domain.brands import create_fallback_brand
+    from saarthi.domain.brands import create_fallback_brand
     fallback = create_fallback_brand("Local Store")
     assert fallback["canonical_name"] == "LOCAL STORE"
     assert "grievance@localstore.com" in fallback["nodal_email"]

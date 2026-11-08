@@ -1,5 +1,5 @@
 import asyncio
-from consumerdost.database.engine import init_db
+from saarthi.database.engine import init_db
 
 
 async def main():
