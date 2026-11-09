@@ -53,6 +53,23 @@ def get_candidate_models(preferred_model: str | None = None) -> list[str]:
     return candidates
 
 
+def _supplement_with_regex(draft: DisputeCaseDraft, user_text: str) -> DisputeCaseDraft:
+    """Supplement LLM draft with deterministic regex extraction for any missing critical slots."""
+    regex_draft = extract_entities_regex(user_text)
+    if not draft.order_id and regex_draft.order_id:
+        draft.order_id = regex_draft.order_id
+    if not draft.amount_paid_inr and regex_draft.amount_paid_inr:
+        draft.amount_paid_inr = regex_draft.amount_paid_inr
+    if not draft.incident_date and regex_draft.incident_date:
+        draft.incident_date = regex_draft.incident_date
+    if not draft.brand_raw and regex_draft.brand_raw:
+        draft.brand_raw = regex_draft.brand_raw
+    if not draft.complainant_full_name and regex_draft.complainant_full_name:
+        draft.complainant_full_name = regex_draft.complainant_full_name
+    draft.check_missing_fields()
+    return draft
+
+
 class LLMRouter:
     def __init__(self):
         self.gemini_key = settings.gemini_api_key
@@ -76,6 +93,12 @@ class LLMRouter:
         """
         lower = user_text.lower()
 
+        # If user explicitly selected standard/offline engine, bypass all LLMs immediately
+        if preferred_model in ("standard", "offline"):
+            await _notify_progress(progress_callback, "Using standard engine...")
+            self.last_engine = "Standard Engine"
+            return extract_entities_regex(user_text), 3
+
         # Tier 1: Neurons Nano (OpenRouter Free Models)
         if self.openrouter_key:
             import httpx
@@ -89,7 +112,7 @@ class LLMRouter:
                 display = MODEL_DISPLAY_NAMES.get(model_name, model_name.split("/")[-1].replace(":free", ""))
                 await _notify_progress(progress_callback, f"Connecting to Neurons Nano ({display})...")
                 try:
-                    async with httpx.AsyncClient(timeout=6.0) as http_client:
+                    async with httpx.AsyncClient(timeout=4.0) as http_client:
                         res = await http_client.post(
                             "https://openrouter.ai/api/v1/chat/completions",
                             headers=headers,
@@ -109,14 +132,21 @@ class LLMRouter:
                                 content = re.sub(r"\n```$", "", content)
                             data = json.loads(content)
                             draft = DisputeCaseDraft(**data)
-                            draft.check_missing_fields()
+                            draft = _supplement_with_regex(draft, user_text)
                             self.last_engine = f"Neurons Nano ({display})"
                             await _notify_progress(progress_callback, f"Connected to Neurons Nano ({display})\nThinking...")
                             return draft, 1
                         else:
                             logger.warning(f"Tier 1 OpenRouter call failed for {model_name} with status {res.status_code}")
+                            if res.status_code in {401, 403, 429, 500, 502, 503, 504}:
+                                logger.warning(f"OpenRouter circuit breaker triggered ({res.status_code}), halting OpenRouter retries.")
+                                break
                 except Exception as e:
                     logger.warning(f"Tier 1 OpenRouter call failed for {model_name}: {e}")
+                    err_msg = str(e).lower()
+                    if any(k in err_msg for k in ["401", "403", "429", "500", "502", "503", "504", "unauthorized", "forbidden", "service unavailable", "timeout"]):
+                        logger.warning(f"OpenRouter circuit breaker triggered on error ({e}), halting OpenRouter retries.")
+                        break
 
         # Tier 2: Neurons Mini (Google Gemini API / Groq)
         if self.gemini_key:
@@ -129,35 +159,24 @@ class LLMRouter:
                     api_key=self.gemini_key,
                     http_options=types.HttpOptions(timeout=10000),
                 )
-                gemini_models = [
-                    settings.llm_model,
-                    "gemini-3.5-flash-lite",
-                    "gemini-3.1-flash-lite",
-                    "gemini-flash-lite-latest",
-                    "gemini-3.8-flash",
-                ]
-                seen_gemini = set()
-                for gem_model in gemini_models:
-                    if not gem_model or gem_model in seen_gemini:
-                        continue
-                    seen_gemini.add(gem_model)
-                    try:
-                        response = await client.aio.models.generate_content(
-                            model=gem_model,
-                            contents=f"{EXTRACTION_SYSTEM_PROMPT}\n\nUSER COMPLAINT:\n{user_text}",
-                        )
-                        text = response.text.strip()
-                        if text.startswith("```"):
-                            text = re.sub(r"^```(?:json)?\n", "", text)
-                            text = re.sub(r"\n```$", "", text)
-                        data = json.loads(text)
-                        draft = DisputeCaseDraft(**data)
-                        draft.check_missing_fields()
-                        self.last_engine = "Neurons Mini"
-                        await _notify_progress(progress_callback, "Connected to Neurons Mini\nThinking...")
-                        return draft, 2
-                    except Exception as ge:
-                        logger.warning(f"Tier 2 Gemini model {gem_model} failed: {ge}")
+                gem_model = settings.llm_model or "gemini-2.5-flash"
+                try:
+                    response = await client.aio.models.generate_content(
+                        model=gem_model,
+                        contents=f"{EXTRACTION_SYSTEM_PROMPT}\n\nUSER COMPLAINT:\n{user_text}",
+                    )
+                    text = response.text.strip()
+                    if text.startswith("```"):
+                        text = re.sub(r"^```(?:json)?\n", "", text)
+                        text = re.sub(r"\n```$", "", text)
+                    data = json.loads(text)
+                    draft = DisputeCaseDraft(**data)
+                    draft = _supplement_with_regex(draft, user_text)
+                    self.last_engine = "Neurons Mini"
+                    await _notify_progress(progress_callback, "Connected to Neurons Mini\nThinking...")
+                    return draft, 2
+                except Exception as ge:
+                    logger.warning(f"Tier 2 Gemini model {gem_model} failed: {ge}")
             except Exception as e:
                 logger.warning(f"Tier 2 Gemini LLM call failed: {e}")
 
@@ -177,7 +196,7 @@ class LLMRouter:
                 content = completion.choices[0].message.content
                 data = json.loads(content)
                 draft = DisputeCaseDraft(**data)
-                draft.check_missing_fields()
+                draft = _supplement_with_regex(draft, user_text)
                 self.last_engine = "Neurons Mini"
                 await _notify_progress(progress_callback, "Connected to Neurons Mini\nThinking...")
                 return draft, 2

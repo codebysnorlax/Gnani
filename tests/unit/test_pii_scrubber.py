@@ -29,3 +29,17 @@ def test_preserve_order_id_and_utr():
     sanitized = scrub_sensitive_pii(raw)
     assert "OD123456789" in sanitized
     assert "123456789012" in sanitized
+
+
+def test_preserve_conversational_utr():
+    assert "123456789012" in scrub_sensitive_pii("my utr is 123456789012")
+    assert "987654321098" in scrub_sensitive_pii("UTR number 987654321098 bank debit")
+    assert "555544443333" in scrub_sensitive_pii("Transaction reference 555544443333")
+
+
+def test_preserve_standalone_utr_with_target_field():
+    raw = "123456789012"
+    # When target field is order_id, standalone 12 digits is preserved
+    assert scrub_sensitive_pii(raw, target_field="order_id") == "123456789012"
+    # Without target field and without transaction prefix, standalone 12 digits is scrubbed
+    assert scrub_sensitive_pii(raw) == "[REDACTED_GOVT_ID]"

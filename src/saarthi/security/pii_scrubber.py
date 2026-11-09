@@ -9,12 +9,12 @@ SECRET_PATTERN = re.compile(
 # Match 12-digit number groups (like Aadhaar: 1234 5678 9012 or 1234-5678-9012 or 123456789012)
 TWELVE_DIGIT_PATTERN = re.compile(r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}\b")
 TXN_PREFIX_PATTERN = re.compile(
-    r"(?:utr|order|ref|txn|transaction|id)\s*[:#\-_]?\s*$",
+    r"\b(?:utr|order|ref|reference|txn|transaction|id|pnr)\s*(?:is|no|number|code|num|debit|bank)?\s*[:#\-_]?\s*$",
     re.IGNORECASE,
 )
 
 
-def scrub_sensitive_pii(text: str) -> str:
+def scrub_sensitive_pii(text: str, target_field: str | None = None) -> str:
     """Deterministic regex sanitizer that redacts payment cards, secrets, and govt IDs.
     
     Preserves legitimate order numbers, PNRs, and UPI UTR references.
@@ -34,10 +34,13 @@ def scrub_sensitive_pii(text: str) -> str:
     sanitized = SECRET_PATTERN.sub(mask_secret, sanitized)
 
     # Redact 12-digit numbers unless preceded by transaction/order keyword prefix
+    # or active clarification target field is order_id.
     def mask_govt_id(match: re.Match) -> str:
+        if target_field == "order_id":
+            return match.group(0)
         start_pos = match.start()
-        # Look at the text leading up to this match (up to 30 chars prior)
-        preceding_text = sanitized[max(0, start_pos - 30):start_pos].strip()
+        # Look at the text leading up to this match (up to 40 chars prior)
+        preceding_text = sanitized[max(0, start_pos - 40):start_pos].strip()
         if TXN_PREFIX_PATTERN.search(preceding_text):
             # It's an order or UTR number; keep it
             return match.group(0)

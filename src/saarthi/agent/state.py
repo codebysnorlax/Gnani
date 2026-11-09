@@ -53,6 +53,9 @@ class SaarthiState(TypedDict, total=False):
     progress_callback: Any
     llm_engine: str | None
     neurons_model: str | None
+    pending_confirmation_field: str | None
+    pending_confirmation_value: Any | None
+    has_greeted: bool | None
 
 
 # Backward-compatible alias

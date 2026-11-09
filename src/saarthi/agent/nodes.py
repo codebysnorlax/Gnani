@@ -13,6 +13,7 @@ from saarthi.agent.voice_prompts import VoicePromptComposer
 from saarthi.agent.response_composer import ResponseComposer
 from saarthi.security.pii_scrubber import scrub_sensitive_pii
 from saarthi.agent.llm_router import llm_router
+from saarthi.agent.regex_fallback import parse_date_from_text
 from saarthi.domain.brands import resolve_brand
 from saarthi.domain.statutes import get_statute_entry
 from saarthi.domain.calculator import calculate_claim, format_inr
@@ -72,13 +73,14 @@ async def node_ingest(state: ConsumerDostState) -> dict:
 async def node_scrub(state: ConsumerDostState) -> dict:
     """Deterministically scrub payment card numbers, secrets, and govt IDs."""
     raw = state.get("raw_input_text") or ""
-    sanitized = scrub_sensitive_pii(raw)
+    target_field = state.get("clarification_target_field")
+    sanitized = scrub_sensitive_pii(raw, target_field=target_field)
     return {"sanitized_transcript": sanitized}
 
 
 async def node_parse(state: ConsumerDostState) -> dict:
     """Extract structured dispute entities via cascading LLM router."""
-    sanitized = state.get("sanitized_transcript") or ""
+    sanitized = state.get("sanitized_transcript") or state.get("raw_input_text") or ""
     progress_cb = state.get("progress_callback")
     neurons_model = state.get("neurons_model")
     draft, tier = await llm_router.extract_dispute_facts(
@@ -99,7 +101,8 @@ async def node_parse(state: ConsumerDostState) -> dict:
     if draft.order_id and not state.get("order_id"):
         updates["order_id"] = draft.order_id
     if draft.complainant_full_name and not state.get("complainant_full_name"):
-        updates["complainant_full_name"] = draft.complainant_full_name
+        clean_name = re.sub(r"\s+(?:hai|tha)$", "", draft.complainant_full_name, flags=re.IGNORECASE).strip()
+        updates["complainant_full_name"] = clean_name
     if draft.complainant_contact and not state.get("complainant_contact"):
         updates["complainant_contact"] = draft.complainant_contact
     if draft.category:
@@ -115,18 +118,19 @@ async def node_parse(state: ConsumerDostState) -> dict:
 
     if target_field == "full_name" and not updates.get("complainant_full_name") and not state.get("complainant_full_name"):
         name_candidate = re.sub(
-            r"^(?:my\s+name\s+is|i\s+am|naam|mera\s+naam\s+(?:hai)?)\s*",
+            r"^(?:no,?\s*|nahi,?\s*)?(?:my\s+name\s+is|i\s+am|naam|mera\s+naam)\s*(?:is|hai|tha)?\s*",
             "",
             cleaned_input,
             flags=re.IGNORECASE,
         ).strip(". ")
+        name_candidate = re.sub(r"\s+(?:hai|tha)$", "", name_candidate, flags=re.IGNORECASE).strip(". ")
         if name_candidate and len(name_candidate.split()) <= 5 and not re.search(r"\d", name_candidate):
             updates["complainant_full_name"] = name_candidate.title()
 
     elif target_field == "amount" and not state.get("amount_paid_inr"):
         # If user directly provided a number or currency (e.g. "30000", "₹30,000", "30000 rs")
         amt_match = re.search(
-            r"^(?:₹|rs\.?|inr)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+)\s*(?:₹|rs\.?|inr|rupees)?$",
+            r"^(?:no,?\s*|nahi,?\s*)?(?:₹|rs\.?|inr)?\s*([0-9]{1,3}(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?|[0-9]+)\s*(?:₹|rs\.?|inr|rupees)?$",
             cleaned_input,
             re.IGNORECASE,
         )
@@ -152,23 +156,55 @@ async def node_parse(state: ConsumerDostState) -> dict:
                     pass
 
     elif target_field == "order_id" and not updates.get("order_id") and not state.get("order_id"):
-        order_candidate = re.sub(
-            r"^(?:order\s*(?:id|no|number)?|id|ref|pnr|utr)\s*[:#-]?\s*",
+        from saarthi.agent.regex_fallback import EXPLICIT_ORDER_PATTERN
+        exp_m = EXPLICIT_ORDER_PATTERN.search(cleaned_input)
+        if exp_m:
+            updates["order_id"] = exp_m.group(1).strip().upper()
+        else:
+            order_candidate = re.sub(
+                r"^(?:no,?\s*|nahi,?\s*)?(?:my\s+|mera\s+|meri\s+|ye\s+)?(?:order|id|ref|pnr|utr|txn|transaction)(?:\s*(?:id|no|number|code))?\s*(?:is|hai|tha)?\s*[:#-]?\s*",
+                "",
+                cleaned_input,
+                flags=re.IGNORECASE,
+            ).strip(". ")
+            order_candidate = re.sub(r"\s+(?:hai|tha)$", "", order_candidate, flags=re.IGNORECASE).strip(". ")
+            if order_candidate and len(order_candidate.split()) == 1 and len(order_candidate) >= 4:
+                updates["order_id"] = order_candidate.upper()
+
+    elif target_field == "incident_date" and not updates.get("incident_date") and not state.get("incident_date"):
+        clean_date_input = re.sub(r"^(?:no,?\s*|nahi,?\s*)?", "", cleaned_input, flags=re.IGNORECASE).strip()
+        parsed_date = parse_date_from_text(clean_date_input)
+        if parsed_date:
+            updates["incident_date"] = parsed_date
+
+    elif target_field == "brand" and not updates.get("brand_raw") and not state.get("brand_raw"):
+        brand_candidate = re.sub(
+            r"^(?:no,?\s*|nahi,?\s*)?(?:company|brand|vendor|dukandar|seller|dukaan|for|from)?\s*(?:name|ka\s+naam)?\s*(?:is|hai|tha)?\s*[:#-]?\s*",
             "",
             cleaned_input,
             flags=re.IGNORECASE,
         ).strip(". ")
-        if order_candidate and len(order_candidate.split()) == 1 and len(order_candidate) >= 4:
-            updates["order_id"] = order_candidate.upper()
+        brand_candidate = re.sub(r"\s+(?:hai|tha)$", "", brand_candidate, flags=re.IGNORECASE).strip(". ")
+        if brand_candidate and len(brand_candidate.split()) <= 5:
+            updates["brand_raw"] = brand_candidate.title()
 
-    elif target_field == "incident_date" and not updates.get("incident_date") and not state.get("incident_date"):
-        date_match = re.search(
-            r"(\d{1,2}[-/ ](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[0-9]{1,2})[-/ ]\d{2,4}|\d{4}-\d{2}-\d{2})",
-            cleaned_input,
-            re.IGNORECASE,
-        )
-        if date_match:
-            updates["incident_date"] = date_match.group(1)
+    # Check if a specific field was requested during fallback (Tier 3) mode
+    if target_field and tier == 3:
+        candidate = None
+        if target_field == "incident_date" and updates.get("incident_date"):
+            candidate = updates.pop("incident_date")
+        elif target_field == "order_id" and updates.get("order_id"):
+            candidate = updates.pop("order_id")
+        elif target_field == "amount" and updates.get("amount_paid_inr"):
+            candidate = updates.pop("amount_paid_inr")
+        elif target_field == "brand" and updates.get("brand_raw"):
+            candidate = updates.pop("brand_raw")
+        elif target_field == "full_name" and updates.get("complainant_full_name"):
+            candidate = updates.pop("complainant_full_name")
+
+        if candidate is not None:
+            updates["pending_confirmation_field"] = target_field
+            updates["pending_confirmation_value"] = candidate
 
     # Merge existing state with new updates to check missing fields
     current_brand = updates.get("brand_raw") or state.get("brand_raw")
@@ -198,17 +234,8 @@ CLARIFICATION_PRIORITY = ["brand", "amount", "order_id", "incident_date", "full_
 async def node_clarify(state: ConsumerDostState) -> dict:
     """Build targeted dynamic context-aware single-field clarification prompt and voice note."""
     missing = state.get("missing_fields", [])
-    if not missing:
+    if not missing and not state.get("pending_confirmation_field"):
         return {"clarification_prompt": None, "clarification_audio_path": None}
-
-    # Select exactly one field by priority
-    target_field = None
-    for f in CLARIFICATION_PRIORITY:
-        if f in missing:
-            target_field = f
-            break
-    if not target_field:
-        target_field = missing[0]
 
     lang = state.get("preferred_language", "hi-IN")
     detected = state.get("detected_script_language")
@@ -217,15 +244,79 @@ async def node_clarify(state: ConsumerDostState) -> dict:
 
     voice_char = state.get("preferred_voice_character") or "Shivani"
     progress_cb = state.get("progress_callback")
+
+    # If user provided a slot value in fallback mode, ask for explicit confirmation
+    pending_field = state.get("pending_confirmation_field")
+    pending_val = state.get("pending_confirmation_value")
+    if pending_field and pending_val is not None:
+        val_display = format_inr(float(pending_val)) if pending_field == "amount" else str(pending_val)
+        is_hi = lang.startswith("hi") or lang == "hinglish"
+        if is_hi:
+            prompt_text = (
+                f"आपने यह विवरण दिया है:\n<b>{val_display}</b>\n\n"
+                "कृपया पुष्टि करें कि क्या यह सही है।"
+            )
+            spoken_script = f"Aapne yeh vivaran diya hai: {val_display}. <pauses> Kripya confirm karein."
+        else:
+            prompt_text = (
+                f"You provided this:\n<b>{val_display}</b>\n\n"
+                "Please confirm if this is correct."
+            )
+            spoken_script = f"You provided this: {val_display}. <pauses> Please confirm if this is correct."
+
+        user_id = state.get("telegram_user_id", "user")
+        thread_id = state.get("thread_id", "thread")
+        audio_path = settings.data_dir / "artifacts" / f"Confirm_{user_id}_{pending_field}.wav"
+
+        await _notify_progress(progress_cb, "Cooking voice guidance...")
+        audio_res = await tts_service.synthesize_speech(
+            text=spoken_script,
+            output_path=audio_path,
+            language=lang,
+            voice=voice_char,
+            model="timbre-v3.0",
+        )
+
+        return {
+            "clarification_prompt": prompt_text,
+            "clarification_audio_path": str(audio_res) if audio_res else None,
+            "status": "AWAITING_CLARIFICATION",
+            "clarification_target_field": pending_field,
+            "pending_confirmation_field": pending_field,
+            "pending_confirmation_value": pending_val,
+            "missing_fields": missing,
+            "preferred_voice_character": voice_char,
+            "is_explicit_language": state.get("is_explicit_language"),
+            "llm_engine": "Standard Engine",
+        }
+
+    target_field = None
+    for f in CLARIFICATION_PRIORITY:
+        if f in missing:
+            target_field = f
+            break
+    if not target_field and missing:
+        target_field = missing[0]
+
+    prev_target = state.get("clarification_target_field")
+    latest_input = state.get("raw_input_text")
+    is_invalid_retry = bool(
+        prev_target
+        and prev_target == target_field
+        and latest_input
+        and latest_input.strip()
+    )
+
     neurons_model = state.get("neurons_model")
     composed = await ResponseComposer.compose_clarification(
         known_facts=dict(state),
         target_field=target_field,
         language=lang,
-        latest_user_text=state.get("raw_input_text"),
+        latest_user_text=latest_input,
         voice_character=voice_char,
         progress_callback=progress_cb,
         preferred_model=neurons_model,
+        is_invalid_retry=is_invalid_retry,
     )
     prompt_text = composed.visible_text
     spoken_script = composed.spoken_text

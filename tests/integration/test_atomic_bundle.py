@@ -9,11 +9,12 @@ from saarthi.agent.state import ConsumerDostState
 async def test_full_flow_intake_to_atomic_generation():
     """Verify end-to-end LangGraph state machine from text/intake to atomic GENERATED state."""
     intake_graph = await get_compiled_graph()
-
+    import uuid
+    uid = uuid.uuid4().hex[:8]
     state: ConsumerDostState = {
-        "telegram_user_id": "atomic_test_user",
-        "chat_id": "atomic_chat_1",
-        "thread_id": "thread_atomic_1",
+        "telegram_user_id": f"atomic_user_{uid}",
+        "chat_id": f"atomic_chat_{uid}",
+        "thread_id": f"thread_atomic_{uid}",
         "preferred_language": "hi-IN",
         "raw_input_text": (
             "Maine Flipkart se 14999 ka phone 25 October ko mangaya tha. "

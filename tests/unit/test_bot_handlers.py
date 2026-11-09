@@ -252,25 +252,27 @@ def test_neurons_keyboard_options_and_no_emoji():
     from saarthi.telegram.keyboards import get_neurons_keyboard
 
     kb = get_neurons_keyboard(current_model="auto")
-    assert len(kb.inline_keyboard) == 4
+    assert len(kb.inline_keyboard) == 5
 
     btn_texts = [row[0].text for row in kb.inline_keyboard]
     callbacks = [row[0].callback_data for row in kb.inline_keyboard]
 
-    # Verify all 4 options are present
+    # Verify all 5 options are present
     assert any("Nemotron 3.5 Super VL" in t for t in btn_texts)
     assert any("North Mini Code" in t for t in btn_texts)
     assert any("Nemotron 3 Nano Omni 30B" in t for t in btn_texts)
+    assert any("Standard Engine" in t for t in btn_texts)
     assert any("Auto" in t for t in btn_texts)
 
     # Verify callback keys are compact
     assert "neurons:super_vl" in callbacks
     assert "neurons:north_mini" in callbacks
     assert "neurons:nano_omni" in callbacks
+    assert "neurons:standard" in callbacks
     assert "neurons:auto" in callbacks
 
     # Verify active marker
-    assert "[Active] Auto" in btn_texts[3]
+    assert "[Active] Auto" in btn_texts[4]
 
     # Switch active
     kb2 = get_neurons_keyboard(current_model="cohere/north-mini-code:free")
@@ -383,6 +385,42 @@ async def test_compose_conversation_dynamic_and_full_audio():
     emoji_pattern = re.compile(r"[\U00010000-\U0010ffff]", flags=re.UNICODE)
     assert not emoji_pattern.search(res.visible_text)
     assert not emoji_pattern.search(res.spoken_text)
+
+
+@pytest.mark.asyncio
+async def test_slot_confirm_and_edit_handlers():
+    from unittest.mock import MagicMock, AsyncMock, patch
+    from aiogram.types import Message
+    from saarthi.telegram.bot import confirm_and_advance_slot, get_or_create_user_state, save_user_state
+
+    await init_db()
+    user_id = "test_slot_user_101"
+    chat_id = "101"
+
+    state = await get_or_create_user_state(user_id, chat_id)
+    state["brand_raw"] = "Flipkart"
+    state["amount_paid_inr"] = 5000.0
+    state["incident_date"] = "2026-10-25"
+    state["complainant_full_name"] = "Rohan Sharma"
+    state["pending_confirmation_field"] = "order_id"
+    state["pending_confirmation_value"] = "OD1234567890"
+    await save_user_state(user_id, state)
+
+    mock_bot = MagicMock()
+    mock_bot.send_voice = AsyncMock()
+    mock_msg = MagicMock()
+    mock_msg.chat = Chat(id=101, type="private")
+    mock_msg.answer = AsyncMock()
+
+    with patch("saarthi.telegram.bot.send_voice_with_fallback", new_callable=AsyncMock):
+        await confirm_and_advance_slot(mock_bot, mock_msg, state, "order_id", user_id)
+
+    assert state.get("order_id") == "OD1234567890"
+    assert state.get("pending_confirmation_field") is None
+    assert state.get("pending_confirmation_value") is None
+    assert state.get("status") == "AWAITING_CONFIRMATION"
+    assert mock_msg.answer.called
+
 
 
 

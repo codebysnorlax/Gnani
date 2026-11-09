@@ -29,3 +29,59 @@ async def test_llm_router_airline_extraction_tier_3():
     assert tier == 3
     assert draft.amount_paid_inr == 7200.0
     assert draft.category == "AIRLINES"
+
+
+@pytest.mark.asyncio
+async def test_llm_router_openrouter_circuit_breaker_on_503():
+    from unittest.mock import MagicMock, patch
+
+    router = LLMRouter()
+    router.openrouter_key = "test-sk-invalid"
+    router.gemini_key = ""
+    router.groq_key = ""
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 503
+
+    call_count = 0
+
+    async def mock_post(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return mock_resp
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        draft, tier = await router.extract_dispute_facts("Flipkart order Rs 5000")
+
+    # Halts after first model failure instead of trying all candidate models
+    assert call_count == 1
+    assert tier == 3
+    assert draft.amount_paid_inr == 5000.0
+
+
+@pytest.mark.asyncio
+async def test_llm_router_openrouter_circuit_breaker_on_401():
+    from unittest.mock import MagicMock, patch
+
+    router = LLMRouter()
+    router.openrouter_key = "test-sk-invalid"
+    router.gemini_key = ""
+    router.groq_key = ""
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 401
+
+    call_count = 0
+
+    async def mock_post(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return mock_resp
+
+    with patch("httpx.AsyncClient.post", side_effect=mock_post):
+        draft, tier = await router.extract_dispute_facts("Amazon order Rs 2999")
+
+    assert call_count == 1
+    assert tier == 3
+    assert draft.amount_paid_inr == 2999.0
+

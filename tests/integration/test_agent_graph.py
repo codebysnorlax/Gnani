@@ -43,9 +43,9 @@ async def test_agent_graph_incomplete_case_rejects_bundle():
 async def test_agent_graph_full_resolution():
     graph = await get_compiled_graph()
     initial_state: ConsumerDostState = {
-        "telegram_user_id": "test_123",
-        "chat_id": "chat_123",
-        "thread_id": "thread_123",
+        "telegram_user_id": "test_full_res_123",
+        "chat_id": "chat_full_res_123",
+        "thread_id": "thread_full_res_123",
         "raw_input_text": (
             "Maine Flipkart se 14999 ka phone 25 October ko mangaya tha. "
             "Order ID OD3091823901. Screen tooti hui nikli. "

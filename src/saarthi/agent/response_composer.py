@@ -23,6 +23,59 @@ logger = logging.getLogger(__name__)
 ALLOWED_TAGS = {"<pauses>", "<slow>"}
 TAG_REGEX = re.compile(r"<([^>]+)>")
 
+INVALID_FIELD_MESSAGES: dict[str, tuple[str, str]] = {
+    "hi": (
+        "लगता है आपका दिया गया <b>{display_name}</b> सही नहीं लग रहा है।\n\n"
+        "कानूनी नोटिस तैयार करने और {reason}, कृपया दोबारा चेक करके सही <b>{display_name}</b> बताएं।",
+        "Lagta hai aapka diya gaya {display_name} sahi nahi lag raha hai. <pauses> {reason}, kripya dobara check karke sahi {display_name} batayein."
+    ),
+    "en": (
+        "It seems the provided <b>{display_name}</b> is incorrect or invalid.\n\n"
+        "To finalize your statutory claim notice and {reason}, please verify and provide the correct <b>{display_name}</b>.",
+        "It seems the provided {display_name} is incorrect or invalid. <pauses> Please check and provide the correct {display_name} {reason}."
+    ),
+    "kn": (
+        "ನೀವು ನೀಡಿದ <b>{display_name}</b> ಸರಿಯಾಗಿಲ್ಲ ಎಂದು ತೋರುತ್ತದೆ.\n\n"
+        "ದಯವಿಟ್ಟು ಪರಿಶೀಲಿಸಿ ಸರಿಯಾದ <b>{display_name}</b> ನೀಡಿ ({reason}).",
+        "Neevu needida {display_name} sariyagilla endu toruttade. <pauses> Dayavittu parishilisi sariyada {display_name} needi."
+    ),
+    "ta": (
+        "நீங்கள் வழங்கிய <b>{display_name}</b> தவறாக உள்ளது போல் தெரிகிறது.\n\n"
+        "தயவுசெய்து சரிபார்த்து சரியான <b>{display_name}</b> வழங்கவும் ({reason}).",
+        "Neengal vazhangiya {display_name} thavaraaga ulladhu pol therigiradhu. <pauses> Thayavuseidhu saripaarthu sariyaana {display_name} vazhangavum."
+    ),
+    "te": (
+        "మీరు అందించిన <b>{display_name}</b> సరిగ్గా లేనట్లుంది.\n\n"
+        "దయచేసి తనిఖీ చేసి సరైన <b>{display_name}</b> తెలియజేయండి ({reason}).",
+        "Meeru andinchina {display_name} sariggaa lenatlundi. <pauses> Dayachesi thanikhee chesi saraina {display_name} theliyajeyandi."
+    ),
+    "mr": (
+        "तुम्ही दिलेला <b>{display_name}</b> योग्य वाटत नाही.\n\n"
+        "कृपया तपासून योग्य <b>{display_name}</b> सांगा ({reason}).",
+        "Tumhi dilela {display_name} yogya vaatat nahi. <pauses> Krupaya tapaasun yogya {display_name} saanga."
+    ),
+    "bn": (
+        "আপনার দেওয়া <b>{display_name}</b> সঠিক বলে মনে হচ্ছে না।\n\n"
+        "অনুগ্রহ করে যাচাই করে সঠিক <b>{display_name}</b> দিন ({reason}).",
+        "Aapnar dewa {display_name} sothik bole mone hochhe na. <pauses> Anugraha kore jaachai kore sothik {display_name} din."
+    ),
+    "gu": (
+        "તમે આપેલ <b>{display_name}</b> સાચું લાગતું નથી।\n\n"
+        "કૃપા કરીને ચકાસીને સાચું <b>{display_name}</b> જણાવો ({reason}).",
+        "Tame aapel {display_name} saachu laagtu nathi. <pauses> Krupa karine chakaasine saachu {display_name} janavo."
+    ),
+    "ml": (
+        "നിങ്ങൾ നൽകിയ <b>{display_name}</b> ശരിയല്ലെന്ന് തോന്നുന്നു.\n\n"
+        "ദയവായി പരിശോധിച്ച് ശരിയായ <b>{display_name}</b> നൽകുക ({reason}).",
+        "Ningal nalkiya {display_name} shariyallennu thonnunnu. <pauses> Dayavaayi parishodhichu shariyaaya {display_name} nalkuka."
+    ),
+    "pa": (
+        "ਤੁਹਾਡੇ ਵੱਲੋਂ ਦਿੱਤਾ ਗਿਆ <b>{display_name}</b> ਸਹੀ ਨਹੀਂ ਲੱਗਦਾ।\n\n"
+        "ਕਿਰਪਾ ਕਰਕੇ ਜਾਂਚ ਕਰਕੇ ਸਹੀ <b>{display_name}</b> ਦੱਸੋ ({reason}).",
+        "Tuhade vallon ditta gaya {display_name} sahi nahin lagda. <pauses> Kirpa karke jaanch karke sahi {display_name} dasso."
+    ),
+}
+
 
 @dataclass
 class ComposedResponse:
@@ -123,10 +176,25 @@ class ResponseComposer:
         known_facts: dict[str, Any],
         target_field: str,
         language: str = "en-IN",
+        is_invalid_retry: bool = False,
     ) -> ComposedResponse:
         """Deterministic, fact-grounded fallback template composer."""
         is_hi = language.startswith("hi") or language == "hinglish"
         display_name, reason = cls._get_field_meta(target_field, language)
+
+        if is_invalid_retry:
+            lang_prefix = language.split("-")[0].lower()
+            if lang_prefix not in INVALID_FIELD_MESSAGES:
+                lang_prefix = "en"
+            vis_tmpl, spk_tmpl = INVALID_FIELD_MESSAGES[lang_prefix]
+            visible = vis_tmpl.format(display_name=display_name, reason=reason)
+            spoken = spk_tmpl.format(display_name=display_name, reason=reason)
+            return ComposedResponse(
+                visible_text=visible,
+                spoken_text=sanitize_speech_tags(spoken),
+                target_field=target_field,
+                engine="Standard Engine",
+            )
 
         brand = known_facts.get("brand") or known_facts.get("brand_raw")
         amount = known_facts.get("amount") or known_facts.get("amount_paid_inr")
@@ -161,7 +229,7 @@ class ResponseComposer:
 
             if ack_text:
                 visible = (
-                    f"{ack_text}<br><br>"
+                    f"{ack_text}\n\n"
                     f"To finalize your statutory claim notice, please provide your <b>{display_name}</b> ({reason})."
                 )
                 spoken = f"{spoken_ack} <pauses> Please provide your {display_name} {reason}."
@@ -188,7 +256,7 @@ class ResponseComposer:
 
             if ack_text:
                 visible = (
-                    f"{ack_text}<br><br>"
+                    f"{ack_text}\n\n"
                     f"कानूनी नोटिस तैयार करने के लिए, {reason}, कृपया अपना <b>{display_name}</b> बताएं।"
                 )
                 spoken = f"{spoken_ack} <pauses> {reason}, kripya apna {display_name} batayein."
@@ -216,6 +284,7 @@ class ResponseComposer:
         voice_character: str = "Shivani",
         progress_callback: Any = None,
         preferred_model: str | None = None,
+        is_invalid_retry: bool = False,
     ) -> ComposedResponse:
         """Compose dynamic clarification response via OpenRouter -> Gemini -> Template cascade."""
         display_name, reason = cls._get_field_meta(target_field, language)
@@ -241,23 +310,38 @@ class ResponseComposer:
             "summarizes key facts gently, and asks for EXACTLY ONE missing detail.\n\n"
             "STRICT GUIDELINES:\n"
             "1. NO EMOJIS: Do not include emojis anywhere in visible_text or spoken_text.\n"
-            "2. ACKNOWLEDGE & VALIDATE: Warmly acknowledge the user's latest statement and confirmed facts (e.g., brand, amount, or order ID) naturally.\n"
-            f"3. ASK ONLY ONE FIELD: Ask exclusively for the target missing detail, explicitly mentioning '{display_name}'. Explain briefly and naturally why it is needed.\n"
-            f"4. VOICE GENDER CONCORDANCE: You are speaking as '{voice_character}' ({gender.upper()}). "
+            "2. NO REPETITIVE GREETINGS: Do NOT include greetings ('Hello', 'Namaste', 'Hi', 'Greetings') or bot re-introductions ('I am SAARTHI', 'Main SAARTHI hoon') in visible_text or spoken_text. The conversation is already ongoing. Immediately acknowledge known facts or the user's latest statement, and directly ask for the target missing detail.\n"
+            "3. NO FALSE CONFIRMATIONS: NEVER claim you have noted, recorded, or saved a detail if that detail is still listed as missing or invalid! If Target Field Status is INVALID_OR_UNACCEPTED, do NOT say 'mil gaya', 'noted', or 'dhanyawad maine aapka detail note kar liya'. Instead, tell the user politely in the requested Language that their provided detail appears incorrect or invalid (e.g. in Hindi: 'लगता है आपका दिया गया Order ID या UTR सही नहीं लग रहा है...', in English: 'It seems the provided Order ID or Reference Number is incorrect or invalid...'), and ask them to double-check and provide the correct detail.\n"
+            "4. ACKNOWLEDGE & VALIDATE: Warmly acknowledge confirmed facts (e.g., brand or amount). Do NOT confirm the missing/invalid target field.\n"
+            f"5. ASK ONLY ONE FIELD: Ask exclusively for the target missing detail, explicitly mentioning '{display_name}'. Explain briefly and naturally why it is needed.\n"
+            f"6. VOICE GENDER CONCORDANCE: You are speaking as '{voice_character}' ({gender.upper()}). "
             f"When using Hindi or Hinglish, strictly conjugate first-person verbs for {gender.upper()} gender "
             f"(e.g., female uses 'karungi', 'bataungi', 'sun rahi hoon'; male uses 'karunga', 'bataunga', 'sun raha hoon').\n"
-            "5. FULL SPOKEN TEXT FOR TTS: 'spoken_text' MUST speak the full response completely and naturally, matching the information in 'visible_text' without HTML tags or markdown formatting. Do NOT cut off the audio or speak only half. You may include at most one <pauses> tag.\n"
-            "6. OUTPUT FORMAT: Respond ONLY with a valid JSON object with keys 'visible_text' (HTML formatted for Telegram) and 'spoken_text'."
+            "7. FULL SPOKEN TEXT FOR TTS: 'spoken_text' MUST speak the full response completely and naturally, matching the information in 'visible_text' without HTML tags or markdown formatting. Do NOT cut off the audio or speak only half. You may include at most one <pauses> tag.\n"
+            "8. OUTPUT FORMAT: Respond ONLY with a valid JSON object with keys 'visible_text' (HTML formatted for Telegram) and 'spoken_text'."
+        )
+
+        field_status_str = (
+            "INVALID_OR_UNACCEPTED (The user attempted to provide this, but it was invalid or could not be verified. "
+            "Politely inform them in the requested Language that it appears incorrect or invalid, and ask them to double-check and share the valid one. "
+            "STRICTLY PROHIBITED from saying 'noted' or 'mil gaya' for this field!)"
+            if is_invalid_retry
+            else "MISSING"
         )
 
         user_prompt = (
             f"Known Facts: {json.dumps(facts_summary, ensure_ascii=False)}\n"
             f"Latest User Statement: \"{latest_user_text or ''}\"\n"
             f"Target Missing Field: {target_field} ({display_name})\n"
+            f"Target Field Status: {field_status_str}\n"
             f"Why Needed: {reason}\n"
             f"Language: {language}\n"
             f"Voice Character: {voice_character} ({gender})\n"
         )
+
+        if preferred_model in ("standard", "offline"):
+            await _notify_progress(progress_callback, "Using standard engine...")
+            return cls.compose_clarification_template(known_facts, target_field, language, is_invalid_retry=is_invalid_retry)
 
         # Tier 1: Neurons Nano (OpenRouter Free Models)
         if settings.openrouter_api_key:
@@ -272,7 +356,7 @@ class ResponseComposer:
                 display = MODEL_DISPLAY_NAMES.get(model_name, model_name.split("/")[-1].replace(":free", ""))
                 await _notify_progress(progress_callback, f"Connecting to Neurons Nano ({display})...")
                 try:
-                    async with httpx.AsyncClient(timeout=7.0) as http_client:
+                    async with httpx.AsyncClient(timeout=4.0) as http_client:
                         res = await http_client.post(
                             "https://openrouter.ai/api/v1/chat/completions",
                             headers=headers,
@@ -292,6 +376,8 @@ class ResponseComposer:
                                 content = re.sub(r"\n```$", "", content)
                             data = json.loads(content)
                             visible = data.get("visible_text")
+                            if visible:
+                                visible = re.sub(r"<br\s*/?>", "\n", visible, flags=re.IGNORECASE)
                             spoken = data.get("spoken_text")
                             if visible and spoken:
                                 await _notify_progress(progress_callback, f"Connected to Neurons Nano ({display})\nThinking...")
@@ -303,8 +389,15 @@ class ResponseComposer:
                                 )
                         else:
                             logger.warning(f"OpenRouter model {model_name} returned status {res.status_code}")
+                            if res.status_code in {401, 403, 429, 500, 502, 503, 504}:
+                                logger.warning(f"OpenRouter circuit breaker triggered ({res.status_code}), halting OpenRouter retries.")
+                                break
                 except Exception as e:
                     logger.warning(f"OpenRouter attempt failed on {model_name}: {e}")
+                    err_msg = str(e).lower()
+                    if any(k in err_msg for k in ["401", "403", "429", "500", "502", "503", "504", "unauthorized", "forbidden", "service unavailable", "timeout"]):
+                        logger.warning(f"OpenRouter circuit breaker triggered on error ({e}), halting OpenRouter retries.")
+                        break
 
         # Tier 2: Neurons Mini (Google Gemini API / Groq)
         if settings.gemini_api_key:
@@ -317,40 +410,31 @@ class ResponseComposer:
                     api_key=settings.gemini_api_key,
                     http_options=types.HttpOptions(timeout=10000),
                 )
-                gemini_models = [
-                    settings.llm_model,
-                    "gemini-3.5-flash-lite",
-                    "gemini-3.1-flash-lite",
-                    "gemini-flash-lite-latest",
-                    "gemini-3.8-flash",
-                ]
-                seen_gemini = set()
-                for gem_model in gemini_models:
-                    if not gem_model or ":free" in gem_model or gem_model in seen_gemini:
-                        continue
-                    seen_gemini.add(gem_model)
-                    try:
-                        response = await client.aio.models.generate_content(
-                            model=gem_model,
-                            contents=f"{system_prompt}\n\n{user_prompt}",
+                gem_model = settings.llm_model or "gemini-2.5-flash"
+                try:
+                    response = await client.aio.models.generate_content(
+                        model=gem_model,
+                        contents=f"{system_prompt}\n\n{user_prompt}",
+                    )
+                    text = response.text.strip()
+                    if text.startswith("```"):
+                        text = re.sub(r"^```(?:json)?\n", "", text)
+                        text = re.sub(r"\n```$", "", text)
+                    data = json.loads(text)
+                    visible = data.get("visible_text")
+                    if visible:
+                        visible = re.sub(r"<br\s*/?>", "\n", visible, flags=re.IGNORECASE)
+                    spoken = data.get("spoken_text")
+                    if visible and spoken:
+                        await _notify_progress(progress_callback, "Connected to Neurons Mini\nThinking...")
+                        return ComposedResponse(
+                            visible_text=visible,
+                            spoken_text=sanitize_speech_tags(spoken, max_tags=1),
+                            target_field=target_field,
+                            engine="Neurons Mini",
                         )
-                        text = response.text.strip()
-                        if text.startswith("```"):
-                            text = re.sub(r"^```(?:json)?\n", "", text)
-                            text = re.sub(r"\n```$", "", text)
-                        data = json.loads(text)
-                        visible = data.get("visible_text")
-                        spoken = data.get("spoken_text")
-                        if visible and spoken:
-                            await _notify_progress(progress_callback, "Connected to Neurons Mini\nThinking...")
-                            return ComposedResponse(
-                                visible_text=visible,
-                                spoken_text=sanitize_speech_tags(spoken, max_tags=1),
-                                target_field=target_field,
-                                engine="Neurons Mini",
-                            )
-                    except Exception as ge:
-                        logger.warning(f"Dynamic Gemini clarification composition failed on {gem_model}: {ge}")
+                except Exception as ge:
+                    logger.warning(f"Dynamic Gemini clarification composition failed on {gem_model}: {ge}")
             except Exception as e:
                 logger.warning(f"Dynamic Gemini clarification composition failed: {e}")
 
@@ -370,6 +454,8 @@ class ResponseComposer:
                 content = completion.choices[0].message.content
                 data = json.loads(content)
                 visible = data.get("visible_text")
+                if visible:
+                    visible = re.sub(r"<br\s*/?>", "\n", visible, flags=re.IGNORECASE)
                 spoken = data.get("spoken_text")
                 if visible and spoken:
                     await _notify_progress(progress_callback, "Connected to Neurons Mini\nThinking...")
@@ -384,7 +470,7 @@ class ResponseComposer:
 
         # Tier 3: Deterministic Fallback Template (Standard Engine)
         await _notify_progress(progress_callback, "Could not connect to Neurons. Using standard engine...")
-        return cls.compose_clarification_template(known_facts, target_field, language)
+        return cls.compose_clarification_template(known_facts, target_field, language, is_invalid_retry=is_invalid_retry)
 
     @classmethod
     async def compose_conversation(
@@ -394,9 +480,16 @@ class ResponseComposer:
         voice_character: str = "Shivani",
         progress_callback: Any = None,
         preferred_model: str | None = None,
+        is_initial_turn: bool = True,
     ) -> ComposedResponse:
         """Dynamically compose conversational responses (languages, capabilities, rights, greetings) via LLM Router Brain."""
         gender = "female" if voice_character.lower() in {"shivani", "chetana", "kalpana", "lakshmi", "riyaa", "tarika", "vasudha"} else "male"
+
+        greeting_instruction = (
+            "Include a warm initial greeting ('Namaste!' or 'Hello!') and introduce yourself as this is the user's initial interaction."
+            if is_initial_turn else
+            "This is an ongoing session. Do NOT repeat introductory greetings ('Namaste', 'Hello', 'I am SAARTHI') or introductory bot presentations. Respond directly and concisely to the user's inquiry."
+        )
 
         system_prompt = (
             "You are SAARTHI, an intelligent, empathetic, and respectful Voice-First Indian Consumer Rights and Dispute Guide under the Consumer Protection Act, 2019.\n\n"
@@ -426,7 +519,8 @@ class ResponseComposer:
             f"When answering in Hindi or Hinglish, strictly conjugate first-person verbs for {gender.upper()} gender (e.g., female uses 'karungi', 'bata sakti hoon', 'madad karungi'; male uses 'karunga', 'bata sakta hoon', 'madad karunga').\n"
             "3. FULL SPOKEN TEXT FOR TTS: 'spoken_text' MUST speak the full response completely and naturally, matching the information in 'visible_text' without HTML tags or markdown formatting. Do NOT cut off the audio or speak only half. You may include at most one <pauses> tag.\n"
             "4. DYNAMIC & NATURAL: Respond conversationally, accurately, and directly to what the user said. When user asks about capabilities, what you can do, or introduces themselves, explain how you help consumers under the Consumer Protection Act, 2019 by calculating statutory claims and drafting a formal Legal Demand Notice (PDF), NCH 1915 dossier, and social escalation posts. Never output canned boilerplate. Warmly invite them to share their dispute whenever they are ready.\n"
-            "5. OUTPUT FORMAT: Respond ONLY with a valid JSON object with keys 'visible_text' (HTML formatted for Telegram using <b>, <i>, <code>) and 'spoken_text' (plain conversational text for TTS)."
+            f"5. GREETING DISCIPLINE: {greeting_instruction}\n"
+            "6. OUTPUT FORMAT: Respond ONLY with a valid JSON object with keys 'visible_text' (HTML formatted for Telegram using <b>, <i>, <code>) and 'spoken_text' (plain conversational text for TTS)."
         )
 
         user_prompt = (
@@ -434,6 +528,10 @@ class ResponseComposer:
             f"Language: {language}\n"
             f"Voice Character: {voice_character} ({gender})\n"
         )
+
+        if preferred_model in ("standard", "offline"):
+            await _notify_progress(progress_callback, "Using standard engine...")
+            return cls._compose_conversation_fallback(language, voice_character, gender, is_initial_turn)
 
         # Tier 1: Neurons Nano (OpenRouter Free Models)
         if settings.openrouter_api_key:
@@ -448,7 +546,7 @@ class ResponseComposer:
                 display = MODEL_DISPLAY_NAMES.get(model_name, model_name.split("/")[-1].replace(":free", ""))
                 await _notify_progress(progress_callback, f"Connecting to Neurons Nano ({display})...")
                 try:
-                    async with httpx.AsyncClient(timeout=7.0) as http_client:
+                    async with httpx.AsyncClient(timeout=4.0) as http_client:
                         res = await http_client.post(
                             "https://openrouter.ai/api/v1/chat/completions",
                             headers=headers,
@@ -477,8 +575,17 @@ class ResponseComposer:
                                     target_field="general_conversation",
                                     engine=f"Neurons Nano ({display})",
                                 )
+                        else:
+                            logger.warning(f"OpenRouter conversation returned status {res.status_code}")
+                            if res.status_code in {401, 403, 429, 500, 502, 503, 504}:
+                                logger.warning(f"OpenRouter circuit breaker triggered ({res.status_code}), halting OpenRouter conversation retries.")
+                                break
                 except Exception as e:
                     logger.warning(f"OpenRouter conversation attempt failed on {model_name}: {e}")
+                    err_msg = str(e).lower()
+                    if any(k in err_msg for k in ["401", "403", "429", "500", "502", "503", "504", "unauthorized", "forbidden", "service unavailable", "timeout"]):
+                        logger.warning(f"OpenRouter circuit breaker triggered on error ({e}), halting OpenRouter conversation retries.")
+                        break
 
         # Tier 2: Neurons Mini (Gemini / Groq)
         if settings.gemini_api_key:
@@ -490,80 +597,110 @@ class ResponseComposer:
                     api_key=settings.gemini_api_key,
                     http_options=types.HttpOptions(timeout=10000),
                 )
-                gemini_models = [
-                    settings.llm_model,
-                    "gemini-3.5-flash-lite",
-                    "gemini-3.1-flash-lite",
-                    "gemini-flash-lite-latest",
-                    "gemini-3.8-flash",
-                ]
-                seen_gemini = set()
-                for gem_model in gemini_models:
-                    if not gem_model or ":free" in gem_model or gem_model in seen_gemini:
-                        continue
-                    seen_gemini.add(gem_model)
-                    try:
-                        response = await client.aio.models.generate_content(
-                            model=gem_model,
-                            contents=f"{system_prompt}\n\n{user_prompt}",
+                gem_model = settings.llm_model or "gemini-2.5-flash"
+                try:
+                    response = await client.aio.models.generate_content(
+                        model=gem_model,
+                        contents=f"{system_prompt}\n\n{user_prompt}",
+                    )
+                    text = response.text.strip()
+                    if text.startswith("```"):
+                        text = re.sub(r"^```(?:json)?\n", "", text)
+                        text = re.sub(r"\n```$", "", text)
+                    data = json.loads(text)
+                    visible = data.get("visible_text")
+                    if visible:
+                        visible = re.sub(r"<br\s*/?>", "\n", visible, flags=re.IGNORECASE)
+                    spoken = data.get("spoken_text")
+                    if visible and spoken:
+                        return ComposedResponse(
+                            visible_text=visible,
+                            spoken_text=sanitize_speech_tags(spoken, max_tags=1),
+                            target_field="general_conversation",
+                            engine="Neurons Mini",
                         )
-                        text = response.text.strip()
-                        if text.startswith("```"):
-                            text = re.sub(r"^```(?:json)?\n", "", text)
-                            text = re.sub(r"\n```$", "", text)
-                        data = json.loads(text)
-                        visible = data.get("visible_text")
-                        spoken = data.get("spoken_text")
-                        if visible and spoken:
-                            return ComposedResponse(
-                                visible_text=visible,
-                                spoken_text=sanitize_speech_tags(spoken, max_tags=1),
-                                target_field="general_conversation",
-                                engine="Neurons Mini",
-                            )
-                    except Exception as ge:
-                        logger.warning(f"Gemini conversation failed on {gem_model}: {ge}")
+                except Exception as ge:
+                    logger.warning(f"Gemini conversation failed on {gem_model}: {ge}")
             except Exception as e:
                 logger.warning(f"Gemini conversation attempt failed: {e}")
 
-        # Fallback Dynamic Template
+        return cls._compose_conversation_fallback(language, voice_character, gender, is_initial_turn)
+
+    @classmethod
+    def _compose_conversation_fallback(
+        cls,
+        language: str,
+        voice_character: str,
+        gender: str,
+        is_initial_turn: bool = True,
+    ) -> ComposedResponse:
         is_hi = language.startswith("hi") or "hinglish" in language.lower()
         if is_hi:
             verb_help = "मदद करूँगी" if gender == "female" else "मदद करूंगा"
             verb_help_spoken = "karungi" if gender == "female" else "karunga"
-            visible = (
-                f"<b>नमस्ते! मैं सारथी (SAARTHI) से {voice_character} हूँ।</b>\n\n"
-                f"मैं <b>उपभोक्ता संरक्षण कानून (Consumer Protection Act, 2019)</b> के तहत नोडल अधिकारी के लिए <b>लीगल डिमांड नोटिस (Legal Demand Notice PDF)</b> और राष्ट्रीय उपभोक्ता हेल्पलाइन (NCH 1915) ड्राफ्ट तैयार करके आपकी {verb_help}।\n\n"
-                f"सारथी Gnani Speech AI द्वारा संचालित <b>10 भारतीय भाषाओं</b> का समर्थन करता है:\n"
-                f"• हिन्दी (Hindi), English, ಕನ್ನಡ (Kannada), தமிழ் (Tamil)\n"
-                f"• Telugu (తెలుగు), मराठी (Marathi), বাংলা (Bengali), ગુજરાતી (Gujarati)\n"
-                f"• Malayalam (മലയാളം), ਪੰਜਾਬੀ (Punjabi)\n\n"
-                f"आप मेनू से कभी भी अपनी भाषा (/lang), आवाज़ (/gender), या AI मॉडल (/neurons) बदल सकते हैं।\n\n"
-                f"अगर किसी कंपनी या विक्रेता के साथ आपकी कोई समस्या या रिफंड अटका है, तो मुझे बताएं, मैं आपकी पूरी {verb_help}!"
-            )
-            spoken = (
-                f"Namaste! Main SAARTHI se {voice_character} hoon. <pauses> "
-                f"Consumer Protection Act ke tehat main legal demand notice aur consumer helpline dossier taiyaar karke madad {verb_help_spoken}. "
-                f"SAARTHI 10 Bharatiya bhashaon ka samarthan karta hai, jaise Hindi, English, Tamil, Telugu, Kannada, Marathi, Bengali, Gujarati, Malayalam, aur Punjabi. "
-                f"Agar kisi company ke saath aapka koi dispute ya refund atka hai, toh kripya batayein, main aapki poori madad {verb_help_spoken}."
-            )
+            if is_initial_turn:
+                visible = (
+                    f"<b>नमस्ते! मैं सारथी (SAARTHI) से {voice_character} हूँ।</b>\n\n"
+                    f"मैं <b>उपभोक्ता संरक्षण कानून (Consumer Protection Act, 2019)</b> के तहत नोडल अधिकारी के लिए <b>लीगल डिमांड नोटिस (Legal Demand Notice PDF)</b> और राष्ट्रीय उपभोक्ता हेल्पलाइन (NCH 1915) ड्राफ्ट तैयार करके आपकी {verb_help}।\n\n"
+                    f"सारथी Gnani Speech AI द्वारा संचालित <b>10 भारतीय भाषाओं</b> का समर्थन करता है:\n"
+                    f"• हिन्दी (Hindi), English, ಕನ್ನಡ (Kannada), தமிழ் (Tamil)\n"
+                    f"• Telugu (తెలుగు), मराठी (Marathi), বাংলা (Bengali), ગુજરાતી (Gujarati)\n"
+                    f"• Malayalam (മലയാളം), ਪੰਜਾਬੀ (Punjabi)\n\n"
+                    f"आप मेनू से कभी भी अपनी भाषा (/lang), आवाज़ (/gender), या AI मॉडल (/neurons) बदल सकते हैं।\n\n"
+                    f"अगर किसी कंपनी या विक्रेता के साथ आपकी कोई समस्या या रिफंड अटका है, तो मुझे बताएं, मैं आपकी पूरी {verb_help}!"
+                )
+                spoken = (
+                    f"Namaste! Main SAARTHI se {voice_character} hoon. <pauses> "
+                    f"Consumer Protection Act ke tehat main legal demand notice aur consumer helpline dossier taiyaar karke madad {verb_help_spoken}. "
+                    f"SAARTHI 10 Bharatiya bhashaon ka samarthan karta hai, jaise Hindi, English, Tamil, Telugu, Kannada, Marathi, Bengali, Gujarati, Malayalam, aur Punjabi. "
+                    f"Agar kisi company ke saath aapka koi dispute ya refund atka hai, toh kripya batayein, main aapki poori madad {verb_help_spoken}."
+                )
+            else:
+                visible = (
+                    f"सारथी <b>उपभोक्ता संरक्षण कानून (Consumer Protection Act, 2019)</b> के तहत नोडल अधिकारी के लिए <b>लीगल डिमांड नोटिस (Legal Demand Notice PDF)</b> और राष्ट्रीय उपभोक्ता हेल्पलाइन (NCH 1915) ड्राफ्ट तैयार करता है।\n\n"
+                    f"हम Gnani Speech AI द्वारा संचालित <b>10 भारतीय भाषाओं</b> का समर्थन करते हैं:\n"
+                    f"• हिन्दी (Hindi), English, ಕನ್ನಡ (Kannada), தமிழ் (Tamil)\n"
+                    f"• Telugu (తెలుగు), मराठी (Marathi), বাংলা (Bengali), ગુજરાતી (Gujarati)\n"
+                    f"• Malayalam (മലയാളം), ਪੰਜਾਬੀ (Punjabi)\n\n"
+                    f"अगर किसी कंपनी या विक्रेता के साथ आपकी कोई समस्या या रिफंड अटका है, तो मुझे बताएं, मैं आपकी पूरी {verb_help}!"
+                )
+                spoken = (
+                    f"Consumer Protection Act ke tehat main legal demand notice aur consumer helpline dossier taiyaar karke madad {verb_help_spoken}. <pauses> "
+                    f"SAARTHI 10 Bharatiya bhashaon ka samarthan karta hai. "
+                    f"Agar kisi company ke saath aapka koi dispute ya refund atka hai, toh kripya batayein, main aapki poori madad {verb_help_spoken}."
+                )
         else:
-            visible = (
-                f"<b>Hello! I am {voice_character} from SAARTHI.</b>\n\n"
-                f"I help consumers resolve unfair disputes under the <b>Consumer Protection Act, 2019</b> by calculating statutory claims and drafting a formal <b>Legal Demand Notice (PDF)</b>, NCH 1915 WhatsApp filings, and social escalation posts.\n\n"
-                f"SAARTHI proudly supports <b>10 Indian languages</b> via Gnani Speech AI:\n"
-                f"• Hindi (हिन्दी), English, Kannada (ಕನ್ನಡ), Tamil (தமிழ்)\n"
-                f"• Telugu (తెలుగు), Marathi (मराठी), Bengali (বাংলা), Gujarati (ગુજરાતી)\n"
-                f"• Malayalam (മലയാളം), Punjabi (ਪੰਜਾਬੀ)\n\n"
-                f"You can switch your language anytime using /lang or the menu buttons below, change voice character via /gender, and select AI Neurons via /neurons.\n\n"
-                f"Please tell me which company or brand you have an issue with, and what happened!"
-            )
-            spoken = (
-                f"Hello! I am {voice_character} from SAARTHI. <pauses> "
-                f"I assist consumers under the Consumer Protection Act by generating formal legal demand notices and consumer helpline filings. "
-                f"SAARTHI supports 10 Indian languages via Gnani Speech AI, including Hindi, English, Kannada, Tamil, Telugu, Marathi, Bengali, Gujarati, Malayalam, and Punjabi. "
-                f"Please tell me which company you have an issue with and what happened, and I will assist you."
-            )
+            if is_initial_turn:
+                visible = (
+                    f"<b>Hello! I am {voice_character} from SAARTHI.</b>\n\n"
+                    f"I help consumers resolve unfair disputes under the <b>Consumer Protection Act, 2019</b> by calculating statutory claims and drafting a formal <b>Legal Demand Notice (PDF)</b>, NCH 1915 WhatsApp filings, and social escalation posts.\n\n"
+                    f"SAARTHI proudly supports <b>10 Indian languages</b> via Gnani Speech AI:\n"
+                    f"• Hindi (हिन्दी), English, Kannada (ಕನ್ನಡ), Tamil (தமிழ்)\n"
+                    f"• Telugu (తెలుగు), Marathi (मराठी), Bengali (বাংলা), Gujarati (ગુજરાતી)\n"
+                    f"• Malayalam (മലയാളം), Punjabi (ਪੰਜਾਬੀ)\n\n"
+                    f"You can switch your language anytime using /lang or the menu buttons below, change voice character via /gender, and select AI Neurons via /neurons.\n\n"
+                    f"Please tell me which company or brand you have an issue with, and what happened!"
+                )
+                spoken = (
+                    f"Hello! I am {voice_character} from SAARTHI. <pauses> "
+                    f"I assist consumers under the Consumer Protection Act by generating formal legal demand notices and consumer helpline filings. "
+                    f"SAARTHI supports 10 Indian languages via Gnani Speech AI, including Hindi, English, Kannada, Tamil, Telugu, Marathi, Bengali, Gujarati, Malayalam, and Punjabi. "
+                    f"Please tell me which company you have an issue with and what happened, and I will assist you."
+                )
+            else:
+                visible = (
+                    f"I help consumers resolve unfair disputes under the <b>Consumer Protection Act, 2019</b> by calculating statutory claims and drafting a formal <b>Legal Demand Notice (PDF)</b>, NCH 1915 WhatsApp filings, and social escalation posts.\n\n"
+                    f"SAARTHI proudly supports <b>10 Indian languages</b> via Gnani Speech AI:\n"
+                    f"• Hindi (हिन्दी), English, Kannada (ಕನ್ನಡ), Tamil (தமிழ்)\n"
+                    f"• Telugu (తెలుగు), Marathi (मराठी), Bengali (বাংলা), Gujarati (ગુજરાતી)\n"
+                    f"• Malayalam (മലയാളം), Punjabi (ਪੰਜਾਬੀ)\n\n"
+                    f"Please tell me which company or brand you have an issue with, and what happened!"
+                )
+                spoken = (
+                    f"I assist consumers under the Consumer Protection Act by generating formal legal demand notices and consumer helpline filings. <pauses> "
+                    f"SAARTHI supports 10 Indian languages via Gnani Speech AI. "
+                    f"Please tell me which company you have an issue with and what happened, and I will assist you."
+                )
 
         return ComposedResponse(
             visible_text=visible,

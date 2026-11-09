@@ -19,7 +19,9 @@ from saarthi.agent.nodes import (
 
 
 def should_clarify(state: ConsumerDostState) -> Literal["clarify", "resolve"]:
-    """Conditional routing: if missing critical fields, route to clarify; else resolve."""
+    """Conditional routing: if pending confirmation or missing critical fields, route to clarify; else resolve."""
+    if state.get("pending_confirmation_field"):
+        return "clarify"
     missing = state.get("missing_fields", [])
     if missing:
         return "clarify"

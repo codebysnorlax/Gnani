@@ -177,6 +177,10 @@ def get_neurons_keyboard(current_model: str | None = None) -> InlineKeyboardMark
     if curr in ("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "nano_omni"):
         btn_omni = "[Active] Nemotron 3 Nano Omni 30B"
 
+    btn_standard = "Standard Engine (Offline / No LLM)"
+    if curr in ("standard", "offline"):
+        btn_standard = "[Active] Standard Engine (Offline / No LLM)"
+
     btn_auto = "Auto (Cascade & Fallback)"
     if curr in ("auto", "", None):
         btn_auto = "[Active] Auto (Cascade & Fallback)"
@@ -203,9 +207,34 @@ def get_neurons_keyboard(current_model: str | None = None) -> InlineKeyboardMark
             ],
             [
                 InlineKeyboardButton(
+                    text=btn_standard,
+                    callback_data="neurons:standard",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text=btn_auto,
                     callback_data="neurons:auto",
                 )
             ],
         ]
     )
+
+
+def get_slot_confirmation_keyboard(field_name: str) -> InlineKeyboardMarkup:
+    """Action buttons to confirm or edit an extracted dispute field."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Confirm / पुष्टि करें",
+                    callback_data=f"slot_confirm:{field_name}",
+                ),
+                InlineKeyboardButton(
+                    text="Edit / बदलें",
+                    callback_data=f"slot_edit:{field_name}",
+                ),
+            ],
+        ]
+    )
+

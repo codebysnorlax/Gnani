@@ -1,5 +1,6 @@
 import io
 import re
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict
@@ -15,6 +16,9 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.middlewares.base import BaseRequestMiddleware, NextRequestMiddlewareType
+from aiogram.methods.base import TelegramMethod, TelegramType
+from aiogram.exceptions import TelegramServerError, TelegramNetworkError, TelegramBadRequest
 from aiogram.utils.chat_action import ChatActionSender
 
 from saarthi.config import settings
@@ -35,6 +39,7 @@ from saarthi.telegram.keyboards import (
     get_persistent_menu_keyboard,
     get_voice_character_keyboard,
     get_neurons_keyboard,
+    get_slot_confirmation_keyboard,
 )
 from saarthi.telegram.formatters import (
     format_welcome_message,
@@ -52,6 +57,7 @@ NEURONS_KEY_TO_MODEL = {
     "super_vl": "nvidia/nemotron-3.5-super-vl:free",
     "north_mini": "cohere/north-mini-code:free",
     "nano_omni": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "standard": "standard",
     "auto": "auto",
 }
 
@@ -59,8 +65,43 @@ NEURONS_MODEL_TO_NAME = {
     "nvidia/nemotron-3.5-super-vl:free": "Nemotron 3.5 Super VL",
     "cohere/north-mini-code:free": "North Mini Code",
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": "Nemotron 3 Nano Omni 30B",
+    "standard": "Standard Engine (Offline / No LLM)",
     "auto": "Auto (Cascade & Fallback)",
 }
+
+_cached_banner_file_id: str | None = None
+
+
+async def send_banner_safe(
+    bot: Bot,
+    chat_id: int | str,
+    message: Message | None = None,
+) -> None:
+    """Send welcome banner image safely using cached Telegram file_id with strict timeout.
+    
+    Prevents photo upload stalls from blocking user interactions.
+    """
+    global _cached_banner_file_id
+    banner_path = getattr(settings, "banner_image_path", settings.assets_dir / "banner.jpg")
+    if not banner_path.exists():
+        return
+    try:
+        photo_to_send = _cached_banner_file_id if _cached_banner_file_id else FSInputFile(str(banner_path))
+        if message and hasattr(message, "answer_photo"):
+            msg = await asyncio.wait_for(
+                message.answer_photo(photo=photo_to_send),
+                timeout=5.0,
+            )
+        else:
+            msg = await asyncio.wait_for(
+                bot.send_photo(chat_id=chat_id, photo=photo_to_send),
+                timeout=5.0,
+            )
+        if msg and getattr(msg, "photo", None) and not _cached_banner_file_id:
+            _cached_banner_file_id = msg.photo[-1].file_id
+            logger.info(f"Cached Telegram banner file_id: {_cached_banner_file_id}")
+    except Exception as e:
+        logger.warning(f"Could not send welcome banner to {chat_id}: {e}")
 
 
 async def send_voice_with_fallback(
@@ -69,15 +110,100 @@ async def send_voice_with_fallback(
     audio_path: str | Path | None,
     caption: str | None = None,
 ) -> bool:
-    """Send voice message to chat if file exists, logging warning on failure."""
+    """Send voice message to chat if file exists, logging warning on failure with a timeout guard."""
     if audio_path and Path(audio_path).exists():
         try:
             voice_file = FSInputFile(str(audio_path))
-            await bot.send_voice(chat_id=chat_id, voice=voice_file, caption=caption)
+            await asyncio.wait_for(
+                bot.send_voice(chat_id=chat_id, voice=voice_file, caption=caption),
+                timeout=10.0,
+            )
             return True
         except Exception as e:
             logger.warning(f"Could not send voice note to {chat_id}: {e}")
     return False
+
+
+FIELD_KEY_MAP = {
+    "brand": "brand_raw",
+    "amount": "amount_paid_inr",
+    "order_id": "order_id",
+    "incident_date": "incident_date",
+    "full_name": "complainant_full_name",
+}
+
+
+async def confirm_and_advance_slot(
+    bot: Bot,
+    message: Message,
+    state: ConsumerDostState,
+    field: str,
+    user_id: str,
+) -> None:
+    """Commit confirmed slot value into state and route to next missing field or assessment."""
+    chat_id = str(message.chat.id)
+    val = state.get("pending_confirmation_value")
+    state_key = FIELD_KEY_MAP.get(field, field)
+    if val is not None:
+        state[state_key] = val
+
+    state["pending_confirmation_field"] = None
+    state["pending_confirmation_value"] = None
+    state["clarification_target_field"] = None
+
+    # Re-evaluate missing fields
+    missing = []
+    if not state.get("brand_raw"):
+        missing.append("brand")
+    if state.get("amount_paid_inr") is None or state.get("amount_paid_inr") <= 0:
+        missing.append("amount")
+    if not state.get("incident_date"):
+        missing.append("incident_date")
+    if not state.get("order_id"):
+        missing.append("order_id")
+    if not state.get("complainant_full_name"):
+        missing.append("full_name")
+    state["missing_fields"] = missing
+
+    if not missing:
+        from saarthi.agent.nodes import node_resolve
+        resolve_res = await node_resolve(state)
+        state.update(resolve_res)
+        state["status"] = "AWAITING_CONFIRMATION"
+        await save_user_state(user_id, state)
+
+        assessment_audio = state.get("assessment_audio_path")
+        async with ChatActionSender.upload_voice(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=assessment_audio,
+                caption="<b>Dispute Assessment Walkthrough:</b> Statutory claim summary.",
+            )
+        card = format_assessment_card(state)
+        await message.answer(card, reply_markup=get_confirmation_keyboard())
+    else:
+        from saarthi.agent.nodes import node_clarify
+        clarify_res = await node_clarify(state)
+        state.update(clarify_res)
+        state["status"] = "AWAITING_CLARIFICATION"
+        await save_user_state(user_id, state)
+
+        engine = state.get("llm_engine") or "Standard Engine"
+        clarify_audio = state.get("clarification_audio_path")
+        async with ChatActionSender.upload_voice(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=clarify_audio,
+                caption=f"<b>Voice Clarification ({engine}):</b> Please listen to the details needed.",
+            )
+        prompt = state.get("clarification_prompt")
+        if state.get("pending_confirmation_field"):
+            kb = get_slot_confirmation_keyboard(state["pending_confirmation_field"])
+            await message.answer(prompt, reply_markup=kb)
+        else:
+            await message.answer(prompt)
 
 
 async def setup_bot_commands(bot: Bot) -> None:
@@ -204,11 +330,55 @@ def get_user_state(user_id: str, chat_id: str) -> ConsumerDostState:
     return user_sessions[user_id]
 
 
+class TelegramRetryMiddleware(BaseRequestMiddleware):
+    """Retries transient Telegram server errors (502 Bad Gateway, 504 Timeout) on outbound requests,
+    and strips formatting if Telegram entity parsing fails.
+    """
+
+    def __init__(self, max_retries: int = 3, retry_delay: float = 1.0):
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+    async def __call__(
+        self,
+        make_request: NextRequestMiddlewareType[TelegramType],
+        bot: Bot,
+        method: TelegramMethod[TelegramType],
+    ) -> TelegramType:
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                return await make_request(bot, method)
+            except TelegramBadRequest as e:
+                err_msg = str(e).lower()
+                if "can't parse entities" in err_msg or "unsupported start tag" in err_msg or "entity" in err_msg:
+                    logger.warning(
+                        f"Telegram entity parse failed on {type(method).__name__}: {e}. Retrying with plain text."
+                    )
+                    if hasattr(method, "parse_mode"):
+                        method.parse_mode = None
+                    if hasattr(method, "text") and isinstance(method.text, str):
+                        method.text = re.sub(r"<[^>]+>", "", method.text)
+                    if hasattr(method, "caption") and isinstance(method.caption, str):
+                        method.caption = re.sub(r"<[^>]+>", "", method.caption)
+                    return await make_request(bot, method)
+                raise
+            except (TelegramServerError, TelegramNetworkError) as e:
+                err_text = str(e).lower()
+                is_timeout = "timeout" in err_text or "time out" in err_text
+                if attempt == self.max_retries or (is_timeout and attempt >= 2):
+                    raise
+                logger.warning(
+                    f"Telegram request {type(method).__name__} failed ({e}). Retrying in {self.retry_delay * attempt:.1f}s (attempt {attempt}/{self.max_retries})..."
+                )
+                await asyncio.sleep(self.retry_delay * attempt)
+
+
 def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
     bot = Bot(
         token=settings.telegram_bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+    bot.session.middleware(TelegramRetryMiddleware())
     dp = Dispatcher()
     dp.update.middleware(DeduplicationMiddleware())
 
@@ -256,14 +426,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         await save_user_state(user_id, fresh_state)
 
         # Always send banner image on /start (initial start or when user clears chat and starts from scratch)
-        banner_path = getattr(settings, "banner_image_path", settings.assets_dir / "banner.jpg")
-        if banner_path.exists():
-            try:
-                await message.answer_photo(
-                    photo=FSInputFile(str(banner_path)),
-                )
-            except Exception as e:
-                logger.warning(f"Could not send welcome banner to {chat_id}: {e}")
+        await send_banner_safe(bot, chat_id, message=message)
         async with AsyncSessionLocal() as session:
             repo = DisputeRepository(session)
             await repo.mark_banner_seen(user_id)
@@ -335,14 +498,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         await save_user_state(user_id, fresh_state)
 
         # Send banner when user starts from scratch
-        banner_path = getattr(settings, "banner_image_path", settings.assets_dir / "banner.jpg")
-        if banner_path.exists():
-            try:
-                await callback.message.answer_photo(
-                    photo=FSInputFile(str(banner_path)),
-                )
-            except Exception as e:
-                logger.warning(f"Could not send banner to {chat_id}: {e}")
+        await send_banner_safe(bot, chat_id, message=callback.message)
 
         await callback.message.answer(
             "Previous case cleared. Please speak or type your consumer dispute to begin, or select from the options below:",
@@ -408,14 +564,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         }
         await save_user_state(user_id, fresh_state)
 
-        banner_path = getattr(settings, "banner_image_path", settings.assets_dir / "banner.jpg")
-        if banner_path.exists():
-            try:
-                await message.answer_photo(
-                    photo=FSInputFile(str(banner_path)),
-                )
-            except Exception as e:
-                logger.warning(f"Could not send banner to {chat_id}: {e}")
+        await send_banner_safe(bot, chat_id, message=message)
 
         await message.answer(
             "Previous session cleared. Please speak or type your consumer dispute to begin, or select from the options below:",
@@ -479,11 +628,12 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         curr_name = NEURONS_MODEL_TO_NAME.get(curr, curr)
         await callback.message.answer(
             "<b>Select Neurons AI Model / AI मॉडल चुनें:</b>\n\n"
-            "Choose which OpenRouter free model to power the SAARTHI brain:\n"
+            "Choose which model powers the SAARTHI brain:\n"
             "1. <b>Nemotron 3.5 Super VL</b>: Fast multimodal language reasoning.\n"
             "2. <b>North Mini Code</b>: Precise instruction adherence and structuring.\n"
             "3. <b>Nemotron 3 Nano Omni 30B</b>: Deep reasoning.\n"
-            "4. <b>Auto</b>: Dynamically cascades across all models, falling back automatically if any model is rate-limited or unavailable.\n\n"
+            "4. <b>Standard Engine</b>: Offline rule-based engine (instant, zero external LLM dependencies).\n"
+            "5. <b>Auto</b>: Dynamically cascades across all models, falling back automatically if any model is rate-limited or unavailable.\n\n"
             f"<b>Active Model:</b> <code>{curr_name}</code>",
             reply_markup=get_neurons_keyboard(curr),
         )
@@ -718,6 +868,38 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         await callback.message.answer("Dispute draft cancelled.")
         await callback.answer()
 
+    @dp.callback_query(F.data.startswith("slot_confirm:"))
+    async def handle_slot_confirm(callback: CallbackQuery):
+        field = callback.data.split("slot_confirm:")[1]
+        user_id = str(callback.from_user.id)
+        chat_id = str(callback.message.chat.id)
+        state = await get_or_create_user_state(user_id, chat_id)
+        if callback.message:
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        await confirm_and_advance_slot(bot, callback.message, state, field, user_id)
+        await callback.answer("Confirmed")
+
+    @dp.callback_query(F.data.startswith("slot_edit:"))
+    async def handle_slot_edit(callback: CallbackQuery):
+        field = callback.data.split("slot_edit:")[1]
+        user_id = str(callback.from_user.id)
+        chat_id = str(callback.message.chat.id)
+        state = await get_or_create_user_state(user_id, chat_id)
+        if callback.message:
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        state["pending_confirmation_field"] = None
+        state["pending_confirmation_value"] = None
+        state["clarification_target_field"] = field
+        await save_user_state(user_id, state)
+        await callback.message.answer("Send edit one (please send the corrected detail):")
+        await callback.answer()
+
     # 3. Message Handlers (Voice and Text)
     @dp.message(F.voice)
     async def handle_voice_message(message: Message):
@@ -746,6 +928,22 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         user_id = str(message.from_user.id)
         chat_id = str(message.chat.id)
         state = await get_or_create_user_state(user_id, chat_id)
+
+        # Check for textual confirmation if a slot is awaiting confirmation
+        if state.get("pending_confirmation_field"):
+            raw_clean = (message.text or "").strip().lower()
+            if raw_clean in {"confirm", "yes", "haan", "ha", "sahi", "sahi hai", "ok", "done", "confirm it", "theek hai", "theek"}:
+                field = state["pending_confirmation_field"]
+                await confirm_and_advance_slot(bot, message, state, field, user_id)
+                return
+            elif raw_clean in {"edit", "change", "badlo", "galat", "no", "nahi", "change it", "edit it"}:
+                field = state["pending_confirmation_field"]
+                state["pending_confirmation_field"] = None
+                state["pending_confirmation_value"] = None
+                state["clarification_target_field"] = field
+                await save_user_state(user_id, state)
+                await message.answer("Send edit one (please send the corrected detail):")
+                return
 
         state["raw_input_text"] = message.text
         state["voice_bytes"] = None
@@ -833,13 +1031,21 @@ async def handle_conversational_inquiry(bot: Bot, message: Message, state: Consu
     lang = "en-IN" if is_english else (state.get("preferred_language") or "hi-IN")
 
     # 1. Dynamic LLM composition with continuous typing action in Telegram title header
+    is_initial = not bool(
+        state.get("brand_raw")
+        or state.get("amount_paid_inr")
+        or state.get("has_greeted")
+        or state.get("status") in {"DRAFT", "AWAITING_CLARIFICATION", "AWAITING_CONFIRMATION"}
+    )
     async with ChatActionSender.typing(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
         composed = await ResponseComposer.compose_conversation(
             user_text=raw_text,
             language=lang,
             voice_character=voice_char,
             preferred_model=neurons_model,
+            is_initial_turn=is_initial,
         )
+    state["has_greeted"] = True
 
     # 2. Synthesize complete spoken voice note with continuous record_voice action
     import hashlib
@@ -969,7 +1175,11 @@ async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostS
                 caption=f"<b>Voice Clarification ({engine}):</b> Please listen to the details needed.",
             )
         prompt = state.get("clarification_prompt", "Please provide missing order or name details.")
-        await message.answer(prompt)
+        if state.get("pending_confirmation_field"):
+            kb = get_slot_confirmation_keyboard(state["pending_confirmation_field"])
+            await message.answer(prompt, reply_markup=kb)
+        else:
+            await message.answer(prompt)
 
     elif status == "AWAITING_CONFIRMATION":
         assessment_audio = state.get("assessment_audio_path")
