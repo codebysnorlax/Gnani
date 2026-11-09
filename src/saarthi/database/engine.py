@@ -56,6 +56,10 @@ async def init_db() -> None:
                     cursor.execute(
                         "ALTER TABLE users ADD COLUMN preferred_voice_character VARCHAR(64) DEFAULT 'Shivani';"
                     )
+                if "has_seen_banner" not in columns:
+                    cursor.execute(
+                        "ALTER TABLE users ADD COLUMN has_seen_banner INTEGER DEFAULT 0;"
+                    )
             finally:
                 cursor.close()
 

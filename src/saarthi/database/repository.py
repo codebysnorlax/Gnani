@@ -64,11 +64,20 @@ class DisputeRepository:
                 telegram_chat_id=telegram_chat_id,
                 preferred_language=preferred_language,
                 preferred_voice_character=preferred_voice_character,
+                has_seen_banner=0,
             )
             self.session.add(user)
             await self.session.commit()
             await self.session.refresh(user)
         return user
+
+    async def mark_banner_seen(self, telegram_user_id: str) -> None:
+        stmt = select(User).where(User.telegram_user_id == telegram_user_id)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user:
+            user.has_seen_banner = 1
+            await self.session.commit()
 
     async def update_user_profile(
         self,

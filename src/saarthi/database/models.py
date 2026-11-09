@@ -26,6 +26,7 @@ class User(Base):
     contact_detail = Column(String(255), nullable=True)
     preferred_language = Column(String(32), nullable=False, default="hi-IN")
     preferred_voice_character = Column(String(64), nullable=False, default="Shivani")
+    has_seen_banner = Column(Integer, nullable=False, default=0)
     created_at = Column(String(64), nullable=False, default=utcnow_iso)
     updated_at = Column(String(64), nullable=False, default=utcnow_iso, onupdate=utcnow_iso)
 

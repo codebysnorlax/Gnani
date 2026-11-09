@@ -37,7 +37,8 @@ def format_welcome_message() -> str:
         "automatically redacted. Only transaction IDs and relevant grievance facts are processed.\n\n"
         "<b>Statutory Notice:</b> SAARTHI is an automated grievance assistance tool "
         "under Section 35 of the Consumer Protection Act, 2019. It does not provide licensed advocacy.\n\n"
-        "Send a voice note or type your dispute to begin, or use the menu: /lang to change language, /gender to change voice character."
+        "Send a voice note or type your dispute to begin, or select from the options below: "
+        "Language (/lang), Voice (/gender), AI Neurons Model (/neurons)."
     )
 
 

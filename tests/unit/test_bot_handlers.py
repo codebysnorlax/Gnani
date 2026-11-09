@@ -194,6 +194,13 @@ def test_is_conversational_greeting_or_help():
     assert is_conversational_greeting_or_help("kya kar sakte ho")
     assert is_conversational_greeting_or_help("who are you")
 
+    # Language support inquiries
+    assert is_conversational_greeting_or_help("Which which language you can support")
+    assert is_conversational_greeting_or_help("how many languages do you support")
+    assert is_conversational_greeting_or_help("what languages can you speak")
+    assert is_conversational_greeting_or_help("can you speak Tamil")
+    assert is_conversational_greeting_or_help("konsi bhasha support karte ho")
+
     # Real complaints must NOT be treated as conversational greetings
     assert not is_conversational_greeting_or_help("I ordered a phone on Flipkart for 14999")
     assert not is_conversational_greeting_or_help("Airline cancelled my ticket and denied refund")
@@ -286,6 +293,96 @@ async def test_setup_bot_commands_includes_neurons():
     assert "neurons" in cmd_names
     assert "lang" in cmd_names
     assert "gender" in cmd_names
+
+
+@pytest.mark.asyncio
+async def test_start_banner_and_welcome_keyboard():
+    from unittest.mock import patch
+    from saarthi.database.engine import AsyncSessionLocal
+    from saarthi.database.repository import DisputeRepository
+    from saarthi.telegram.keyboards import get_welcome_keyboard
+
+    await init_db()
+    test_user_id = "999"
+    test_chat_id = "999"
+
+    # Ensure clean slate
+    async with AsyncSessionLocal() as session:
+        repo = DisputeRepository(session)
+        await repo.delete_user_data(test_user_id)
+
+    bot, dp = create_bot_and_dispatcher()
+    bot.send_chat_action = AsyncMock()
+
+    # Find the cmd_start handler
+    start_handler = None
+    for handler in dp.message.handlers:
+        if getattr(handler.callback, "__name__", "") == "cmd_start":
+            start_handler = handler.callback
+            break
+
+    assert start_handler is not None, "cmd_start handler should be registered"
+
+    # Mock Message
+    mock_msg = MagicMock(spec=Message)
+    mock_msg.from_user = TelegramUser(id=999, is_bot=False, first_name="BannerTester")
+    mock_msg.chat = Chat(id=999, type="private")
+    mock_msg.answer = AsyncMock()
+    mock_msg.answer_photo = AsyncMock()
+
+    with patch("saarthi.telegram.bot.get_or_create_welcome_voice", return_value=None), \
+         patch("saarthi.telegram.bot.send_voice_with_fallback", new_callable=AsyncMock):
+
+        # Start: should send banner photo and welcome keyboard
+        await start_handler(mock_msg)
+        assert mock_msg.answer_photo.await_count == 1
+        assert mock_msg.answer.await_count == 1
+
+        # Verify welcome keyboard has neurons option
+        kwargs = mock_msg.answer.call_args[1]
+        kb = kwargs.get("reply_markup")
+        assert kb is not None
+        callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+        assert "menu:neurons" in callbacks
+        assert "menu:language" in callbacks
+        assert "menu:voice" in callbacks
+
+    # Clean up
+    async with AsyncSessionLocal() as session:
+        repo = DisputeRepository(session)
+        await repo.delete_user_data(test_user_id)
+
+
+@pytest.mark.asyncio
+async def test_compose_conversation_dynamic_and_full_audio():
+    from saarthi.agent.response_composer import ResponseComposer
+
+    res = await ResponseComposer.compose_conversation(
+        user_text="Which which language you can support",
+        language="en-IN",
+        voice_character="Shivani",
+    )
+    assert res is not None
+    assert res.visible_text
+    assert res.spoken_text
+
+    # Verify 10 languages awareness
+    visible_lower = res.visible_text.lower()
+    spoken_lower = res.spoken_text.lower()
+    assert "hindi" in visible_lower or "हिन्दी" in res.visible_text
+    assert "tamil" in visible_lower or "தமிழ்" in res.visible_text
+    assert "kannada" in visible_lower or "ಕನ್ನಡ" in res.visible_text
+    assert "telugu" in visible_lower or "తెలుగు" in res.visible_text
+
+    # Verify audio is NOT truncated to < 25 words
+    spoken_words = res.spoken_text.split()
+    assert len(spoken_words) >= 25, f"Spoken text is too short ({len(spoken_words)} words); expected full audio note"
+
+    # Verify no emojis
+    import re
+    emoji_pattern = re.compile(r"[\U00010000-\U0010ffff]", flags=re.UNICODE)
+    assert not emoji_pattern.search(res.visible_text)
+    assert not emoji_pattern.search(res.spoken_text)
 
 
 

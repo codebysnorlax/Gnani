@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     data_dir: Path = base_dir / "data"
     assets_dir: Path = base_dir / "assets"
     fonts_dir: Path = assets_dir / "fonts"
+    banner_image_path: Path = assets_dir / "banner.jpg"
 
     model_config = SettingsConfigDict(
         env_file=".env",

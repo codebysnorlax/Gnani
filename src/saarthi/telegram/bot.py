@@ -15,12 +15,14 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 from aiogram.client.default import DefaultBotProperties
+from aiogram.utils.chat_action import ChatActionSender
 
 from saarthi.config import settings
 from saarthi.database.engine import AsyncSessionLocal, init_db
 from saarthi.database.repository import DisputeRepository
 from saarthi.agent.state import ConsumerDostState
 from saarthi.agent.graph import get_compiled_graph, run_atomic_generation
+from saarthi.agent.response_composer import ResponseComposer
 from saarthi.speech.gnani_tts import tts_service, SUPPORTED_INDIC_LANGUAGES
 from saarthi.speech.gnani_stt import detect_indic_script_language
 from saarthi.agent.voice_prompts import VoicePromptComposer, get_voice_gender
@@ -82,7 +84,7 @@ async def setup_bot_commands(bot: Bot) -> None:
     """Register menu commands with Telegram so they appear in the input box menu."""
     commands = [
         BotCommand(command="start", description="Start SAARTHI assistance"),
-        BotCommand(command="neurons", description="Choose Neurons model / AI मॉडल चुनें"),
+        BotCommand(command="neurons", description="Neurons AI model / AI मॉडल चुनें"),
         BotCommand(command="lang", description="Choose language / भाषा चुनें"),
         BotCommand(command="gender", description="Choose voice & gender / आवाज़ और लिंग चुनें"),
         BotCommand(command="newdispute", description="Start fresh dispute session"),
@@ -90,11 +92,18 @@ async def setup_bot_commands(bot: Bot) -> None:
         BotCommand(command="privacy", description="Purge personal data"),
     ]
     try:
-        from aiogram.types import BotCommandScopeDefault, BotCommandScopeAllPrivateChats
-        for scope in [BotCommandScopeDefault(), BotCommandScopeAllPrivateChats()]:
-            for lang in [None, "en", "hi"]:
-                await bot.set_my_commands(commands, scope=scope, language_code=lang)
-        logger.info("Registered Telegram input box menu commands: /neurons, /lang, /gender across scopes and languages.")
+        from aiogram.types import (
+            BotCommandScopeDefault,
+            BotCommandScopeAllPrivateChats,
+            MenuButtonCommands,
+        )
+        await bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        for lang in ["en", "hi"]:
+            await bot.set_my_commands(commands, scope=BotCommandScopeDefault(), language_code=lang)
+            await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats(), language_code=lang)
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+        logger.info("Registered Telegram input box menu commands: /start, /neurons, /lang, /gender across scopes and languages.")
     except Exception as e:
         logger.warning(f"Failed to register Telegram bot commands: {e}")
 
@@ -213,6 +222,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             user_record = await repo.get_or_create_user(user_id, chat_id)
             saved_lang = user_record.preferred_language or "hi-IN"
             saved_voice = getattr(user_record, "preferred_voice_character", "Shivani") or "Shivani"
+            has_seen_banner = bool(getattr(user_record, "has_seen_banner", 0))
             existing_state = await repo.load_session_state(user_id)
 
         # Check for unfinalized active dispute to offer session recovery
@@ -245,6 +255,19 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         }
         await save_user_state(user_id, fresh_state)
 
+        # Always send banner image on /start (initial start or when user clears chat and starts from scratch)
+        banner_path = getattr(settings, "banner_image_path", settings.assets_dir / "banner.jpg")
+        if banner_path.exists():
+            try:
+                await message.answer_photo(
+                    photo=FSInputFile(str(banner_path)),
+                )
+            except Exception as e:
+                logger.warning(f"Could not send welcome banner to {chat_id}: {e}")
+        async with AsyncSessionLocal() as session:
+            repo = DisputeRepository(session)
+            await repo.mark_banner_seen(user_id)
+
         # Show record_voice chat action
         await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
 
@@ -257,10 +280,10 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             caption="<b>SAARTHI:</b> Voice Grievance Assistant (Gnani Timbre v3.0)",
         )
 
-        # 2. Companion text and clean input area (removes persistent custom keyboards)
+        # 2. Companion text with interactive menu options (Language, Voice, AI Neurons)
         await message.answer(
             format_welcome_message(),
-            reply_markup=ReplyKeyboardRemove(),
+            reply_markup=get_welcome_keyboard(),
         )
 
     @dp.callback_query(F.data == "session:resume")
@@ -310,9 +333,20 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             "status": "DRAFT",
         }
         await save_user_state(user_id, fresh_state)
+
+        # Send banner when user starts from scratch
+        banner_path = getattr(settings, "banner_image_path", settings.assets_dir / "banner.jpg")
+        if banner_path.exists():
+            try:
+                await callback.message.answer_photo(
+                    photo=FSInputFile(str(banner_path)),
+                )
+            except Exception as e:
+                logger.warning(f"Could not send banner to {chat_id}: {e}")
+
         await callback.message.answer(
-            "Previous case cleared. Please speak or type your consumer dispute to begin:",
-            reply_markup=ReplyKeyboardRemove(),
+            "Previous case cleared. Please speak or type your consumer dispute to begin, or select from the options below:",
+            reply_markup=get_welcome_keyboard(),
         )
         await callback.answer()
 
@@ -373,9 +407,19 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             "status": "DRAFT",
         }
         await save_user_state(user_id, fresh_state)
+
+        banner_path = getattr(settings, "banner_image_path", settings.assets_dir / "banner.jpg")
+        if banner_path.exists():
+            try:
+                await message.answer_photo(
+                    photo=FSInputFile(str(banner_path)),
+                )
+            except Exception as e:
+                logger.warning(f"Could not send banner to {chat_id}: {e}")
+
         await message.answer(
-            "Previous session cleared. Please speak or type your consumer dispute to begin.",
-            reply_markup=ReplyKeyboardRemove(),
+            "Previous session cleared. Please speak or type your consumer dispute to begin, or select from the options below:",
+            reply_markup=get_welcome_keyboard(),
         )
 
     @dp.message(Command("mycases"))
@@ -557,13 +601,13 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
             return
 
         await callback.message.answer("<i>Generating your complete Tri-Fold Escalation Dossier...</i>")
-        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
 
         # 1. Run atomic bundle and TTS generation via LangGraph
         try:
-            gen_res = await run_atomic_generation(state)
-            state.update(gen_res)
-            await save_user_state(user_id, state)
+            async with ChatActionSender.record_voice(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+                gen_res = await run_atomic_generation(state)
+                state.update(gen_res)
+                await save_user_state(user_id, state)
         except Exception as e:
             logger.exception(f"Bundle generation failed for user {user_id}: {e}")
             await callback.message.answer(
@@ -612,11 +656,12 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
         # 4. Deliver Document 1: PDF Attachment + Cover Email
         pdf_path = state.get("pdf_file_path")
         if pdf_path and Path(pdf_path).exists():
-            pdf_file = FSInputFile(pdf_path, filename=f"Legal_Demand_Notice_{case_ref}.pdf")
-            await callback.message.answer_document(
-                document=pdf_file,
-                caption=f"<b>Official Legal Notice:</b> {case_ref}\nServe this directly to the brand's statutory Nodal Officer.",
-            )
+            async with ChatActionSender.upload_document(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+                pdf_file = FSInputFile(pdf_path, filename=f"Legal_Demand_Notice_{case_ref}.pdf")
+                await callback.message.answer_document(
+                    document=pdf_file,
+                    caption=f"<b>Official Legal Notice:</b> {case_ref}\nServe this directly to the brand's statutory Nodal Officer.",
+                )
             await callback.message.answer(format_cover_email(state))
 
         # 5. Deliver Document 2: NCH 1915 WhatsApp Dossier Block
@@ -637,12 +682,13 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
         # 7. Deliver Document 4: Gnani Timbre TTS Voice Note
         tts_audio = state.get("tts_audio_path")
-        await send_voice_with_fallback(
-            bot=bot,
-            chat_id=chat_id,
-            audio_path=tts_audio,
-            caption="<b>Spoken Voice Guide:</b> Action walkthrough in your preferred language.",
-        )
+        async with ChatActionSender.upload_voice(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=tts_audio,
+                caption="<b>Spoken Voice Guide:</b> Action walkthrough in your preferred language.",
+            )
 
         # 8. Interactive Action Buttons
         wa_url = state.get("nch_whatsapp_url", "https://wa.me/918860005372")
@@ -710,7 +756,7 @@ def create_bot_and_dispatcher() -> tuple[Bot, Dispatcher]:
 
 
 def is_conversational_greeting_or_help(text: str) -> bool:
-    """Detect if user input is an introductory greeting, capability query, or chit-chat."""
+    """Detect if user input is an introductory greeting, capability query, language query, or chit-chat."""
     if not text:
         return False
     clean = re.sub(r"[^\w\s]", "", text).strip().lower()
@@ -724,6 +770,7 @@ def is_conversational_greeting_or_help(text: str) -> bool:
     if clean in common_phrases:
         return True
 
+    # 1. Capability, identity, and assistance patterns
     inquiry_patterns = [
         r"\b(what|wat)\s+(can|ca|do)\s+you\s+do\b",
         r"\bwhat\s+(are\s+your\s+)?capabilities\b",
@@ -741,80 +788,91 @@ def is_conversational_greeting_or_help(text: str) -> bool:
         if re.search(pattern, clean):
             return True
 
+    # 2. Language support and capability queries
+    lang_patterns = [
+        r"\b(which|what|how\s+many)\s+.*(lang|language|languages|bhasha|bhashayein|boli)\b",
+        r"\b(lang|language|languages|bhasha|bhashayein|boli)\s+.*(support|supported|know|speak|available)\b",
+        r"\b(can|do)\s+you\s+(support|speak|know|understand)\s+.*(language|languages|hindi|english|kannada|tamil|telugu|marathi|bengali|gujarati|malayalam|punjabi|hinglish|bhasha)\b",
+        r"\b(support|supported)\s+(language|languages)\b",
+        r"\b(konsi|kon\s+si|kitni)\s+bhasha\b",
+        r"\bwhich\s+(all\s+)?languages?\b",
+        r"\bwhat\s+all\s+languages?\b",
+    ]
+    for pattern in lang_patterns:
+        if re.search(pattern, clean):
+            return True
+
+    # 3. Conversational questions that lack consumer dispute or transaction facts
+    dispute_keywords = {
+        "order", "refund", "return", "cancelled", "cancel", "delivery", "delivered",
+        "defective", "damaged", "broken", "bought", "purchased", "payment", "paid",
+        "rupees", "rs", "inr", "paise", "flight", "ticket", "airline", "bank",
+        "charge", "charged", "account", "flipkart", "amazon", "zomato", "swiggy",
+        "myntra", "meesho", "fraud", "scam", "cheat", "nodal", "penalty", "interest",
+    }
+    words = set(clean.split())
+    has_dispute_context = bool(words.intersection(dispute_keywords))
+
+    if not has_dispute_context:
+        is_question = "?" in text or bool(re.search(r"^(who|what|why|how|when|which|can|could|do|does|is|are|tell me|kya|kaise|kaun)\b", clean))
+        if is_question:
+            return True
+
     return False
 
 
 async def handle_conversational_inquiry(bot: Bot, message: Message, state: ConsumerDostState) -> None:
-    """Respond dynamically to greetings and capability questions in chosen voice and user's language."""
+    """Respond dynamically to greetings, capabilities, and language inquiries via the Neurons Router Brain."""
     chat_id = str(message.chat.id)
     raw_text = state.get("raw_input_text") or getattr(message, "text", None) or ""
     voice_char = state.get("preferred_voice_character") or "Shivani"
-    gender = get_voice_gender(voice_char)
+    neurons_model = state.get("neurons_model")
 
     detected = detect_indic_script_language(raw_text)
     is_english = (detected == "en-IN") or bool(re.search(r"^[a-zA-Z0-9\s\.,\?!'-]+$", raw_text))
+    lang = "en-IN" if is_english else (state.get("preferred_language") or "hi-IN")
 
-    if is_english:
-        lang = "en-IN"
-        visible_text = (
-            "<b>Hello! I am SAARTHI (pronounced saar-thee)</b>\n"
-            "<i>Your Voice-First AI Consumer Rights & Dispute Guide</i>\n\n"
-            "I help consumers resolve unfair disputes with e-commerce platforms, airlines, banks, and service providers.\n\n"
-            "<b>Here is how I can assist you:</b>\n"
-            "• <b>Legal Claim Calculation:</b> Quantify refund amounts, statutory interest (6-18% p.a.), and legal damages under the Consumer Protection Act, 2019.\n"
-            "• <b>Formal Legal Demand Notice (PDF):</b> Draft a lawyer-grade notice addressed to the company's Nodal Grievance Officer.\n"
-            "• <b>National Consumer Helpline (NCH 1915):</b> Provide structured filing details ready for WhatsApp filing.\n"
-            "• <b>Public Social Escalation:</b> Create a factual escalation draft for X (Twitter).\n"
-            "• <b>Voice Guidance:</b> Provide clear spoken voice walkthroughs in your chosen voice.\n\n"
-            "<b>To begin:</b> Tell me which company or brand you have an issue with, and what happened!"
-        )
-        spoken_text = (
-            f"Hello! I am {voice_char} from SAARTHI, your consumer dispute assistant. <pauses> "
-            "I convert consumer grievances into formal legal demand notices and helpline filings under the Consumer Protection Act. "
-            "<slow> Please tell me which company or brand you have an issue with, and what happened."
-        )
-    else:
-        lang = state.get("preferred_language") or "hi-IN"
-        verb_help = "मदद करूँगी" if gender == "female" else "मदद करूंगा"
-        verb_prepare = "तैयार करूँगी" if gender == "female" else "तैयार करूंगा"
-        verb_can = "सकती हूँ" if gender == "female" else "सकता हूँ"
-        visible_text = (
-            f"<b>नमस्ते! मैं सारथी (SAARTHI) हूँ</b>\n"
-            f"<i>आपका उपभोक्ता अधिकार और कानूनी शिकायत सहायक</i>\n\n"
-            f"अगर किसी कंपनी (जैसे Flipkart, Amazon, एयरलाइंस या बैंक) ने आपका रिफंड अटकाया है या सेवा में कमी की है, तो मैं आपकी पूरी {verb_help}।\n\n"
-            f"<b>मैं आपके लिए क्या कर {verb_can}:</b>\n"
-            f"• <b>कानूनी दावे की गणना:</b> उपभोक्ता संरक्षण कानून के तहत ब्याज और हर्जाने की सटीक गणना।\n"
-            f"• <b>लीगल नोटिस (PDF):</b> कंपनी के नोडल अधिकारी के लिए औपचारिक कानूनी मांग पत्र।\n"
-            f"• <b>राष्ट्रीय उपभोक्ता हेल्पलाइन (NCH 1915):</b> व्हाट्सएप पर शिकायत दर्ज करने के लिए ड्राफ्ट टेक्स्ट।\n"
-            f"• <b>सोशल मीडिया ड्राफ्ट:</b> X (Twitter) पर पोस्ट के लिए ड्राफ्ट।\n"
-            f"• <b>ऑडियो मार्गदर्शन:</b> आपकी चुनी हुई आवाज़ ({voice_char}) में वॉइस गाइड।\n\n"
-            f"<b>शुरुआत करने के लिए:</b> बस एक वॉइस नोट भेजें या लिखकर बताएं कि किस कंपनी या ब्रांड के साथ क्या समस्या हुई है।"
-        )
-        spoken_text = (
-            f"Namaste! Main {voice_char} hoon, SAARTHI se. <pauses> "
-            f"Consumer dispute sunkar main turant legal notice aur helpline filing {verb_prepare}. "
-            f"<slow> Kripya batayein kis company ya brand ke saath kya samasya hui thi."
+    # 1. Dynamic LLM composition with continuous typing action in Telegram title header
+    async with ChatActionSender.typing(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+        composed = await ResponseComposer.compose_conversation(
+            user_text=raw_text,
+            language=lang,
+            voice_character=voice_char,
+            preferred_model=neurons_model,
         )
 
-    await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
-    cache_path = settings.data_dir / "cache" / f"help_intro_{lang}_{voice_char}.wav"
-    audio_path = await tts_service.synthesize_speech(
-        text=spoken_text,
-        output_path=cache_path,
-        language=lang,
-        voice=voice_char,
-        model="timbre-v3.0",
-    )
+    # 2. Synthesize complete spoken voice note with continuous record_voice action
+    import hashlib
+    h = hashlib.md5(f"{raw_text}_{lang}_{voice_char}".encode()).hexdigest()[:8]
+    cache_path = settings.data_dir / "cache" / f"conv_{lang}_{voice_char}_{h}.wav"
+    audio_path = None
+    try:
+        async with ChatActionSender.record_voice(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+            audio_path = await tts_service.synthesize_speech(
+                text=composed.spoken_text,
+                output_path=cache_path,
+                language=lang,
+                voice=voice_char,
+                model="timbre-v3.0",
+            )
+    except Exception as e:
+        logger.warning(f"Voice synthesis for conversational inquiry failed: {e}")
 
+    # 3. Send voice note with continuous upload_voice action
     if audio_path and audio_path.exists():
-        await send_voice_with_fallback(
-            bot=bot,
-            chat_id=chat_id,
-            audio_path=audio_path,
-            caption=f"<b>SAARTHI Overview:</b> Spoken by {voice_char}",
-        )
+        async with ChatActionSender.upload_voice(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=audio_path,
+                caption=f"<b>SAARTHI ({composed.engine}):</b> Spoken by {voice_char}",
+            )
 
-    await message.answer(visible_text)
+    # 4. Companion HTML message with interactive keyboard options
+    await message.answer(
+        composed.visible_text,
+        reply_markup=get_welcome_keyboard(),
+    )
     state["status"] = "DRAFT"
     user_id = state.get("telegram_user_id") or (str(message.from_user.id) if getattr(message, "from_user", None) else "")
     if user_id:
@@ -824,7 +882,6 @@ async def handle_conversational_inquiry(bot: Bot, message: Message, state: Consu
 async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostState) -> None:
     """Run LangGraph pipeline turn and reply with voice-first clarification or assessment card."""
     chat_id = str(message.chat.id)
-    await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
     # Check for friendly greetings or capability inquiries before entering legal intake
     raw_text = state.get("raw_input_text") or getattr(message, "text", None) or ""
@@ -872,9 +929,10 @@ async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostS
     state["progress_callback"] = report_progress
 
     try:
-        graph = await get_compiled_graph()
-        result = await graph.ainvoke(state)
-        state.update(result)
+        async with ChatActionSender.typing(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+            graph = await get_compiled_graph()
+            result = await graph.ainvoke(state)
+            state.update(result)
     except Exception as e:
         await cleanup_status_msg()
         logger.exception(f"Workflow turn execution failed: {e}")
@@ -902,26 +960,26 @@ async def process_workflow_turn(bot: Bot, message: Message, state: ConsumerDostS
     status = state.get("status")
     engine = state.get("llm_engine") or "Neurons Nano"
     if status == "AWAITING_CLARIFICATION":
-        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
         clarify_audio = state.get("clarification_audio_path")
-        await send_voice_with_fallback(
-            bot=bot,
-            chat_id=chat_id,
-            audio_path=clarify_audio,
-            caption=f"<b>Voice Clarification ({engine}):</b> Please listen to the details needed.",
-        )
+        async with ChatActionSender.upload_voice(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=clarify_audio,
+                caption=f"<b>Voice Clarification ({engine}):</b> Please listen to the details needed.",
+            )
         prompt = state.get("clarification_prompt", "Please provide missing order or name details.")
         await message.answer(prompt)
 
     elif status == "AWAITING_CONFIRMATION":
-        await bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_VOICE)
         assessment_audio = state.get("assessment_audio_path")
-        await send_voice_with_fallback(
-            bot=bot,
-            chat_id=chat_id,
-            audio_path=assessment_audio,
-            caption="<b>Dispute Assessment Walkthrough:</b> Statutory claim summary.",
-        )
+        async with ChatActionSender.upload_voice(chat_id=chat_id, bot=bot, initial_sleep=0.0, interval=4.0):
+            await send_voice_with_fallback(
+                bot=bot,
+                chat_id=chat_id,
+                audio_path=assessment_audio,
+                caption="<b>Dispute Assessment Walkthrough:</b> Statutory claim summary.",
+            )
         card = format_assessment_card(state)
         await message.answer(card, reply_markup=get_confirmation_keyboard())
 
